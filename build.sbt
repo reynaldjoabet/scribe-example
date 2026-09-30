@@ -29,6 +29,11 @@ val scalaTest = "3.2.19"
 val circe = "0.14.15"
 val jsoniter = "2.41.2"
 
+lazy val benchClasspath =
+  taskKey[File](
+    "Writes catsApp's resolved Test classpath to target/bench-classpath.txt"
+  )
+
 lazy val root = project
   .in(file("."))
   .aggregate(common, catsApp, zioApp)
@@ -64,7 +69,18 @@ lazy val catsApp = project
     // specs assert on log data typed Map[String, Any], which strict equality can't compare
     Test / scalacOptions -= "-language:strictEquality",
     run / fork := true,
-    Test / fork := true
+    Test / fork := true,
+    // Resolved Test classpath for running the benchmarks with plain `java` (bench/run.sh): sbt 2's `export` prints
+    // placeholder paths (${OUT}, ${CSR_CACHE}) instead of real ones
+    benchClasspath := Def.uncached {
+      val converter = fileConverter.value
+      val paths = (Test / fullClasspath).value
+        .map(entry => converter.toPath(entry.data).toAbsolutePath.toString)
+      val out =
+        (ThisBuild / baseDirectory).value / "target" / "bench-classpath.txt"
+      IO.write(out, paths.mkString(java.io.File.pathSeparator))
+      out
+    }
   )
 
 // ZIO + zio-http app: ZIO's built-in logging (ZIO.logInfo, logAnnotate) with Scribe as the backend

@@ -27,6 +27,7 @@ val zio = "2.1.21"
 val zioHttp = "3.5.1"
 val scalaTest = "3.2.19"
 val circe = "0.14.15"
+val jsoniter = "2.41.2"
 
 lazy val root = project
   .in(file("."))
@@ -39,7 +40,9 @@ lazy val common = project.settings(
     "com.outr" %% "scribe" % scribe,
     "com.outr" %% "scribe-slf4j2" % scribe,
     // JsonLogFormat renders JSON directly; circe is only for HTTP bodies and Json values passed to data(...)
-    "io.circe" %% "circe-core" % circe
+    "io.circe" %% "circe-core" % circe,
+    // JsoniterJsonLogFormat, an alternative to JsonLogFormat (core only: the codec is hand-written, no macros)
+    "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % jsoniter
   )
 )
 

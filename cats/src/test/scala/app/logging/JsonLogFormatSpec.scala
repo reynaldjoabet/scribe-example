@@ -43,12 +43,21 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
   private def withoutTime(json: Json, fields: String*): Json =
     json.mapObject(o => fields.foldLeft(o)(_.remove(_)))
 
-  /** Same fields as the circe format, apart from time: circe's timeStamp/date/time are replaced by `timestamp`. */
+  /** Same fields as the circe format, apart from time: circe's
+    * timeStamp/date/time are replaced by `timestamp`.
+    */
   private def assertSame(r: LogRecord) = {
     val direct = JsonLogFormat.render(r)
     direct should not include "\n"
-    sortedKeys.print(withoutTime(parse(direct), "timestamp")) shouldBe sortedKeys.print(
-      withoutTime(CirceJsonLogFormat.logRecord2Json(r), "timeStamp", "date", "time")
+    sortedKeys.print(
+      withoutTime(parse(direct), "timestamp")
+    ) shouldBe sortedKeys.print(
+      withoutTime(
+        CirceJsonLogFormat.logRecord2Json(r),
+        "timeStamp",
+        "date",
+        "time"
+      )
     )
   }
 
@@ -127,9 +136,16 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
         .withZone(java.time.ZoneOffset.UTC)
       List(1790786235000L, 1790786235007L, 1790786235042L, 1790786235999L,
         1790786236001L, 1790812799999L, 1790812800000L, 0L).foreach { ts =>
-        val line = JsonLogFormat.render(record(List(text("tick")), timeStamp = ts))
-        line should startWith(s"""{"timestamp":"${expected.format(java.time.Instant.ofEpochMilli(ts))}",""")
-        parse(line).asObject.get.keys.toList should not contain allOf("timeStamp", "date", "time")
+        val line =
+          JsonLogFormat.render(record(List(text("tick")), timeStamp = ts))
+        line should startWith(s"""{"timestamp":"${expected.format(
+            java.time.Instant.ofEpochMilli(ts)
+          )}",""")
+        parse(line).asObject.get.keys.toList should not contain allOf(
+          "timeStamp",
+          "date",
+          "time"
+        )
       }
     }
   }

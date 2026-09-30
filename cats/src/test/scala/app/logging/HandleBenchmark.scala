@@ -21,17 +21,22 @@ import java.util.concurrent.atomic.LongAdder
 /** Usage: HandleBenchmark <mode> [records]. Send stdout to /dev/null (or a slow
   * reader); results go to stderr.
   *
-  * Stage modes isolate one cost each (nothing is written to stdout): front Log
-  * -> LogContext -> Scribe routing only; no formatting text-format +
-  * Formatter.strict, which Scribe runs even in JSON mode unless the formatter
-  * is replaced circe + JSON via Scribe's circe support (the previous
-  * JsonLogFormat) direct + JSON via the direct JsonLogFormat Full pipelines to
-  * stdout: sync Formatter.strict + circe JSON + Scribe's SystemOutWriter,
-  * synchronous scribe-async same, through Scribe's AsynchronousLogHandle
-  * current Formatter.strict + circe JSON + AsyncStdoutWriter (LoggingSetup
-  * before this round) sync-direct no text formatter + direct JSON +
-  * SystemOutWriter refined no text formatter + direct JSON + AsyncStdoutWriter
-  * (LoggingSetup now)
+  * Modes (in a code block so scalafmt doesn't reflow the list):
+  * {{{
+  * Stage modes, each adding one cost (nothing written to stdout):
+  *   front             Log -> LogContext -> Scribe routing only; no formatting
+  *   text-format       + Formatter.strict (Scribe runs it even in JSON mode unless replaced)
+  *   circe             + JSON via Scribe's circe support (CirceJsonLogFormat)
+  *   direct            + JSON via JsonLogFormat (StringBuilder)
+  *   jsoniter          + JSON via JsoniterJsonLogFormat
+  * Full pipelines to stdout:
+  *   sync              Formatter.strict + circe JSON + Scribe's SystemOutWriter, synchronous
+  *   scribe-async      same, through Scribe's AsynchronousLogHandle
+  *   current           Formatter.strict + circe JSON + AsyncStdoutWriter (LoggingSetup before the refinements)
+  *   sync-direct       no text formatter + JsonLogFormat + SystemOutWriter
+  *   refined           no text formatter + JsonLogFormat + AsyncStdoutWriter (LoggingSetup now)
+  *   refined-jsoniter  same, with JsoniterJsonLogFormat
+  * }}}
   */
 object HandleBenchmark {
   private val written = new LongAdder
@@ -99,6 +104,13 @@ object HandleBenchmark {
           SynchronousLogHandle,
           () => ()
         )
+      case "jsoniter" =>
+        Setup(
+          noFormatter,
+          JsoniterJsonLogFormat.writer(Discard),
+          SynchronousLogHandle,
+          () => ()
+        )
       case "sync" =>
         Setup(
           Formatter.strict,
@@ -137,6 +149,13 @@ object HandleBenchmark {
           SynchronousLogHandle,
           closeAsync
         )
+      case "refined-jsoniter" =>
+        Setup(
+          noFormatter,
+          JsoniterJsonLogFormat.writer(asyncWriter),
+          SynchronousLogHandle,
+          closeAsync
+        )
       case other => sys.error(s"Unknown mode: $other")
     }
     Logger.root
@@ -169,7 +188,7 @@ object HandleBenchmark {
     burst(100000).unsafeRunSync() // warm-up (JIT)
     Thread.sleep(3000) // let async writers drain the warm-up
     val before = written.sum()
-    if (mode == "refined" || mode == "current")
+    if (mode.startsWith("refined") || mode == "current")
       droppedBefore = asyncWriter.dropped
     val t0 = System.nanoTime()
     burst(n).unsafeRunSync()

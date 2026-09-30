@@ -2,14 +2,11 @@ package app.logging
 
 import io.circe.Json
 import scribe.LogRecord
-import scribe.mdc.MDC
 import scribe.message.Message
 import scribe.output.format.OutputFormat
 import scribe.output.{LogOutput, TextOutput}
 import scribe.throwable.Trace
 import scribe.writer.Writer
-
-import java.time.{LocalDateTime, ZoneOffset}
 
 /** Renders a LogRecord as one JSON line, written straight into a StringBuilder.
   *
@@ -30,8 +27,9 @@ object JsonLogFormat {
 
   def render(record: LogRecord): String = {
     val sb = new java.lang.StringBuilder(512)
-    sb.append("{\"timestamp\":")
-    timestamp(sb, record.timeStamp)
+    sb.append("{\"timestamp\":\"")
+    LogJsonFields.appendTimestamp(sb, record.timeStamp)
+    sb.append('"')
     sb.append(",\"level\":")
     string(sb, record.level.name)
     sb.append(",\"levelValue\":").append(record.levelValue)
@@ -54,12 +52,9 @@ object JsonLogFormat {
     sb.append('}').toString
   }
 
-  // Same selection as Scribe's JSON support: text messages only (stack traces go to "trace"); null / value / array
-  private def messages(sb: java.lang.StringBuilder, record: LogRecord): Unit = {
-    val texts = record.messages.collect {
-      case m: Message[?] if !m.value.isInstanceOf[Throwable] => m
-    }
-    texts match {
+  // null / single value / array, like Scribe's JSON support
+  private def messages(sb: java.lang.StringBuilder, record: LogRecord): Unit =
+    LogJsonFields.textMessages(record) match {
       case Nil           => sb.append("null"): Unit
       case single :: Nil => message(sb, single)
       case many          =>
@@ -70,7 +65,6 @@ object JsonLogFormat {
         }
         sb.append(']'): Unit
     }
-  }
 
   private def message(sb: java.lang.StringBuilder, m: Message[?]): Unit =
     m.value match {
@@ -79,11 +73,9 @@ object JsonLogFormat {
     }
 
   private def data(sb: java.lang.StringBuilder, record: LogRecord): Unit = {
-    val mdc = MDC.map
-    val all = if (mdc.isEmpty) record.data else mdc ++ record.data
     sb.append('{')
     var first = true
-    all.foreach { (key, value) =>
+    LogJsonFields.data(record).foreach { (key, value) =>
       if (!first) sb.append(',')
       first = false
       string(sb, key)
@@ -109,7 +101,7 @@ object JsonLogFormat {
       }
 
   private def traces(sb: java.lang.StringBuilder, record: LogRecord): Unit =
-    record.messages.map(_.value).collect { case t: Trace => t } match {
+    LogJsonFields.traces(record) match {
       case Nil           => sb.append("null"): Unit
       case single :: Nil => trace(sb, single)
       case many          =>
@@ -154,7 +146,7 @@ object JsonLogFormat {
       var i = 0
       while (clean && i < s.length) {
         val c = s.charAt(i)
-        if (c < ' ' || c == '"' || c == '\\') clean = false
+        if (c < ' ' || c == '"' || c == '\\' || c == '\u007f') clean = false
         i += 1
       }
       if (clean) sb.append(s)
@@ -162,14 +154,14 @@ object JsonLogFormat {
         i = 0
         while (i < s.length) {
           s.charAt(i) match {
-            case '"'          => sb.append("\\\"")
-            case '\\'         => sb.append("\\\\")
-            case '\n'         => sb.append("\\n")
-            case '\r'         => sb.append("\\r")
-            case '\t'         => sb.append("\\t")
-            case '\b'         => sb.append("\\b")
-            case '\f'         => sb.append("\\f")
-            case c if c < ' ' =>
+            case '"'  => sb.append("\\\"")
+            case '\\' => sb.append("\\\\")
+            case '\n' => sb.append("\\n")
+            case '\r' => sb.append("\\r")
+            case '\t' => sb.append("\\t")
+            case '\b' => sb.append("\\b")
+            case '\f' => sb.append("\\f")
+            case c if c < ' ' || c == '\u007f' => // control chars, incl. DEL (invisible in terminals)
               sb.append("\\u00")
                 .append(Hex.charAt(c >> 4))
                 .append(Hex.charAt(c & 0xf))
@@ -182,30 +174,4 @@ object JsonLogFormat {
     }
 
   private val Hex = "0123456789abcdef"
-
-  // "timestamp" is ISO-8601 in UTC with exactly 3 fractional digits ("2026-09-30T19:47:11.372Z"), which Datadog, Loki,
-  // GCP and Elastic parse without extra pipeline config, and which sorts correctly as plain text. Everything but the
-  // milliseconds is cached per thread for the current second, so most lines skip date arithmetic entirely.
-  private final class SecondCache {
-    var second: Long = Long.MinValue
-    var prefix: String = "" // "2026-09-30T19:47:11."
-  }
-
-  private val secondCache = ThreadLocal.withInitial(() => new SecondCache)
-
-  private def timestamp(sb: java.lang.StringBuilder, millis: Long): Unit = {
-    val cache = secondCache.get()
-    val second = Math.floorDiv(millis, 1000L)
-    if (second != cache.second) {
-      val t = LocalDateTime.ofEpochSecond(second, 0, ZoneOffset.UTC)
-      cache.prefix = f"${t.getYear}%04d-${t.getMonthValue}%02d-${t.getDayOfMonth}%02dT" +
-        f"${t.getHour}%02d:${t.getMinute}%02d:${t.getSecond}%02d."
-      cache.second = second
-    }
-    val ms = Math.floorMod(millis, 1000L)
-    sb.append('"').append(cache.prefix)
-    if (ms < 100) sb.append('0')
-    if (ms < 10) sb.append('0')
-    sb.append(ms).append("Z\""): Unit
-  }
 }

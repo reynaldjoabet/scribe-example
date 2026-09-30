@@ -55,8 +55,8 @@ private[logging] object LogJsonFields {
     }
     val ms = Math.floorMod(millis, 1000L)
     sb.append(cache.prefix)
-    if (ms < 100) sb.append('0')
-    if (ms < 10) sb.append('0')
+    if (ms < 100) sb.append('0'): Unit
+    if (ms < 10) sb.append('0'): Unit
     sb.append(ms).append('Z'): Unit
   }
 

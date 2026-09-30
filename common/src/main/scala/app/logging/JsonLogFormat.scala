@@ -3,10 +3,9 @@ package app.logging
 import io.circe.Json
 import scribe.LogRecord
 import scribe.message.Message
-import scribe.output.format.OutputFormat
-import scribe.output.{LogOutput, TextOutput}
+import scribe.format.Formatter
+import scribe.output.TextOutput
 import scribe.throwable.Trace
-import scribe.writer.Writer
 
 /** Renders a LogRecord as one JSON line, written straight into a StringBuilder.
   *
@@ -16,14 +15,12 @@ import scribe.writer.Writer
   * this runs on the calling (compute) thread.
   */
 object JsonLogFormat {
-  def writer(inner: Writer): Writer = new Writer {
-    override def write(
-        record: LogRecord,
-        output: LogOutput,
-        outputFormat: OutputFormat
-    ): Unit =
-      inner.write(record, new TextOutput(render(record)), outputFormat)
-  }
+
+  /** Scribe Formatter producing the JSON line; use it with any Writer (e.g.
+    * AsyncStdoutWriter).
+    */
+  val formatter: Formatter = (record: LogRecord) =>
+    new TextOutput(render(record))
 
   def render(record: LogRecord): String = {
     val sb = new java.lang.StringBuilder(512)
@@ -60,7 +57,7 @@ object JsonLogFormat {
       case many          =>
         sb.append('[')
         many.zipWithIndex.foreach { (m, i) =>
-          if (i > 0) sb.append(',')
+          if (i > 0) sb.append(','): Unit
           message(sb, m)
         }
         sb.append(']'): Unit
@@ -76,7 +73,7 @@ object JsonLogFormat {
     sb.append('{')
     var first = true
     LogJsonFields.data(record).foreach { (key, value) =>
-      if (!first) sb.append(',')
+      if (!first) sb.append(','): Unit
       first = false
       string(sb, key)
       sb.append(':')
@@ -107,7 +104,7 @@ object JsonLogFormat {
       case many          =>
         sb.append('[')
         many.zipWithIndex.foreach { (t, i) =>
-          if (i > 0) sb.append(',')
+          if (i > 0) sb.append(','): Unit
           trace(sb, t)
         }
         sb.append(']'): Unit
@@ -120,7 +117,7 @@ object JsonLogFormat {
     if (t.message.isEmpty) sb.append("null") else string(sb, t.message.get)
     sb.append(",\"elements\":[")
     t.elements.zipWithIndex.foreach { (e, i) =>
-      if (i > 0) sb.append(',')
+      if (i > 0) sb.append(','): Unit
       sb.append("{\"class\":")
       string(sb, e.`class`)
       sb.append(",\"fileName\":")

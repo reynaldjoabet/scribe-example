@@ -4,10 +4,9 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import io.circe.Json
 import scribe.LogRecord
 import scribe.message.Message
-import scribe.output.format.OutputFormat
-import scribe.output.{LogOutput, TextOutput}
+import scribe.format.Formatter
+import scribe.output.TextOutput
 import scribe.throwable.Trace
-import scribe.writer.Writer
 
 import java.nio.charset.StandardCharsets
 
@@ -17,14 +16,12 @@ import java.nio.charset.StandardCharsets
   * jsoniter's derived codecs can't express.
   */
 object JsoniterJsonLogFormat {
-  def writer(inner: Writer): Writer = new Writer {
-    override def write(
-        record: LogRecord,
-        output: LogOutput,
-        outputFormat: OutputFormat
-    ): Unit =
-      inner.write(record, new TextOutput(render(record)), outputFormat)
-  }
+
+  /** Scribe Formatter producing the JSON line; use it with any Writer (e.g.
+    * AsyncStdoutWriter).
+    */
+  val formatter: Formatter = (record: LogRecord) =>
+    new TextOutput(render(record))
 
   def render(record: LogRecord): String =
     try writeToString(record)

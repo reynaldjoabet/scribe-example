@@ -1,9 +1,8 @@
 package app.logging
 
 import scribe.format.Formatter
-import scribe.output.EmptyOutput
 import scribe.output.format.ASCIIOutputFormat
-import scribe.{Level, LogRecord, Logger}
+import scribe.{Level, Logger}
 
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -14,7 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 object LoggingSetup {
   private lazy val stdout = new AsyncStdoutWriter(capacity = 65536)
   private val initialized = new AtomicBoolean(false)
-  private val NoTextFormatter: Formatter = (_: LogRecord) => EmptyOutput
 
   /** Lines dropped because stdout couldn't keep up (INFO and below first);
     * export as a metric.
@@ -31,10 +29,9 @@ object LoggingSetup {
       .clearModifiers()
       .withMinimumLevel(level)
       .withHandler(
-        // Scribe runs the handler's formatter on every record before the writer. The JSON writer renders the record
-        // itself, so in JSON mode skip text formatting entirely (it more than doubled the cost of each log line).
-        formatter = if (json) NoTextFormatter else Formatter.strict,
-        writer = if (json) JsonLogFormat.writer(stdout) else stdout,
+        // The formatter renders each record (a JSON line, or text for local dev); the writer only moves lines to stdout
+        formatter = if (json) JsonLogFormat.formatter else Formatter.strict,
+        writer = stdout,
         outputFormat =
           ASCIIOutputFormat // never emit ANSI escapes, even if TERM is set in the container
       )

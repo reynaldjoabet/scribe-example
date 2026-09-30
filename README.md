@@ -200,3 +200,7 @@ So an app ends up with several logging APIs at once, and without bridges each on
 
  The benefit is one place to set levels, one JSON format and one output. Without it, a database driver error goes to stderr in a different format, your log collector can't parse it, and `LOG_LEVEL` doesn't affect it
 
+```sh
+LOG_FORMAT=json  {"timestamp":"2026-09-30T21:29:43.377Z","level":"INFO","levelValue":300.0,"message":"charging order",...}
+LOG_FORMAT=text  2026.10.01 01:29:45 [io-comp...] INFO  a.p.PaymentService.chargeOrder:39 - charging order (method: POST, ...)
+```

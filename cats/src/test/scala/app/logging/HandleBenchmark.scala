@@ -33,9 +33,9 @@ import java.util.concurrent.atomic.LongAdder
   *   sync              Formatter.strict + circe JSON + Scribe's SystemOutWriter, synchronous
   *   scribe-async      same, through Scribe's AsynchronousLogHandle
   *   current           Formatter.strict + circe JSON + AsyncStdoutWriter (LoggingSetup before the refinements)
-  *   sync-direct       no text formatter + JsonLogFormat + SystemOutWriter
-  *   refined           no text formatter + JsonLogFormat + AsyncStdoutWriter (LoggingSetup now)
-  *   refined-jsoniter  same, with JsoniterJsonLogFormat
+  *   sync-direct       JsonLogFormat.formatter + SystemOutWriter
+  *   refined           JsonLogFormat.formatter + AsyncStdoutWriter (LoggingSetup now)
+  *   refined-jsoniter  JsoniterJsonLogFormat.formatter + AsyncStdoutWriter
   * }}}
   */
 object HandleBenchmark {
@@ -99,15 +99,15 @@ object HandleBenchmark {
         )
       case "direct" =>
         Setup(
-          noFormatter,
-          JsonLogFormat.writer(Discard),
+          JsonLogFormat.formatter,
+          Discard,
           SynchronousLogHandle,
           () => ()
         )
       case "jsoniter" =>
         Setup(
-          noFormatter,
-          JsoniterJsonLogFormat.writer(Discard),
+          JsoniterJsonLogFormat.formatter,
+          Discard,
           SynchronousLogHandle,
           () => ()
         )
@@ -137,22 +137,22 @@ object HandleBenchmark {
         )
       case "sync-direct" =>
         Setup(
-          noFormatter,
-          JsonLogFormat.writer(SystemOutWriter),
+          JsonLogFormat.formatter,
+          SystemOutWriter,
           SynchronousLogHandle,
           () => ()
         )
       case "refined" =>
         Setup(
-          noFormatter,
-          JsonLogFormat.writer(asyncWriter),
+          JsonLogFormat.formatter,
+          asyncWriter,
           SynchronousLogHandle,
           closeAsync
         )
       case "refined-jsoniter" =>
         Setup(
-          noFormatter,
-          JsoniterJsonLogFormat.writer(asyncWriter),
+          JsoniterJsonLogFormat.formatter,
+          asyncWriter,
           SynchronousLogHandle,
           closeAsync
         )

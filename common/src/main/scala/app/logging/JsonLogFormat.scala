@@ -9,14 +9,14 @@ import scribe.output.{LogOutput, TextOutput}
 import scribe.throwable.Trace
 import scribe.writer.Writer
 
-import java.time.{Instant, ZoneId}
+import java.time.{LocalDateTime, ZoneOffset}
 
 /** Renders a LogRecord as one JSON line, written straight into a StringBuilder.
   *
-  * Produces the same fields as Scribe's circe format (with `data` as an object
-  * of typed values), but without building a circe AST first: that AST was the
-  * single biggest cost per log line, and this runs on the calling (compute)
-  * thread.
+  * Fields: `timestamp` (ISO-8601 UTC), then the same fields as Scribe's circe
+  * format (with `data` as an object of typed values). Written directly rather
+  * than via a circe AST: that AST was the single biggest cost per log line, and
+  * this runs on the calling (compute) thread.
   */
 object JsonLogFormat {
   def writer(inner: Writer): Writer = new Writer {
@@ -30,7 +30,9 @@ object JsonLogFormat {
 
   def render(record: LogRecord): String = {
     val sb = new java.lang.StringBuilder(512)
-    sb.append("{\"level\":")
+    sb.append("{\"timestamp\":")
+    timestamp(sb, record.timeStamp)
+    sb.append(",\"level\":")
     string(sb, record.level.name)
     sb.append(",\"levelValue\":").append(record.levelValue)
     sb.append(",\"message\":")
@@ -49,8 +51,6 @@ object JsonLogFormat {
     data(sb, record)
     sb.append(",\"trace\":")
     traces(sb, record)
-    sb.append(",\"timeStamp\":").append(record.timeStamp)
-    dateTime(sb, record.timeStamp)
     sb.append('}').toString
   }
 
@@ -183,38 +183,29 @@ object JsonLogFormat {
 
   private val Hex = "0123456789abcdef"
 
-  // "date" / "time" match Scribe's format ("2026-09-30", "20:36:44.999+0400", local time zone). Everything but the
-  // milliseconds is cached per thread for the current second, so most lines skip date/time arithmetic entirely.
+  // "timestamp" is ISO-8601 in UTC with exactly 3 fractional digits ("2026-09-30T19:47:11.372Z"), which Datadog, Loki,
+  // GCP and Elastic parse without extra pipeline config, and which sorts correctly as plain text. Everything but the
+  // milliseconds is cached per thread for the current second, so most lines skip date arithmetic entirely.
   private final class SecondCache {
     var second: Long = Long.MinValue
-    var date: String = ""
-    var hms: String = ""
-    var zone: String = ""
+    var prefix: String = "" // "2026-09-30T19:47:11."
   }
 
   private val secondCache = ThreadLocal.withInitial(() => new SecondCache)
 
-  private def dateTime(sb: java.lang.StringBuilder, millis: Long): Unit = {
+  private def timestamp(sb: java.lang.StringBuilder, millis: Long): Unit = {
     val cache = secondCache.get()
     val second = Math.floorDiv(millis, 1000L)
     if (second != cache.second) {
-      val zoned = Instant.ofEpochSecond(second).atZone(ZoneId.systemDefault())
-      val offset = zoned.getOffset.getTotalSeconds
-      val abs = Math.abs(offset)
-      cache.date = zoned.toLocalDate.toString
-      cache.hms =
-        f"${zoned.getHour}%02d:${zoned.getMinute}%02d:${zoned.getSecond}%02d."
-      cache.zone =
-        f"${if (offset < 0) '-' else '+'}${abs / 3600}%02d${abs / 60 % 60}%02d"
+      val t = LocalDateTime.ofEpochSecond(second, 0, ZoneOffset.UTC)
+      cache.prefix = f"${t.getYear}%04d-${t.getMonthValue}%02d-${t.getDayOfMonth}%02dT" +
+        f"${t.getHour}%02d:${t.getMinute}%02d:${t.getSecond}%02d."
       cache.second = second
     }
     val ms = Math.floorMod(millis, 1000L)
-    sb.append(",\"date\":\"")
-      .append(cache.date)
-      .append("\",\"time\":\"")
-      .append(cache.hms)
+    sb.append('"').append(cache.prefix)
     if (ms < 100) sb.append('0')
     if (ms < 10) sb.append('0')
-    sb.append(ms).append(cache.zone).append('"'): Unit
+    sb.append(ms).append("Z\""): Unit
   }
 }

@@ -40,6 +40,8 @@ object LogCapture {
         )
       )
 
-  extension (r: LogRecord)
+  // Braces, not indentation: the build uses -no-indent, and scalafmt splits the one-line form onto two lines
+  extension (r: LogRecord) {
     def field(key: String): Option[Any] = r.data.get(key).map(_())
+  }
 }

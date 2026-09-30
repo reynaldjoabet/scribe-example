@@ -36,14 +36,19 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
       timeStamp = timeStamp
     )
 
+  private def parse(line: String): Json = io.circe.jawn
+    .parse(line)
+    .fold(e => fail(s"invalid JSON: $e\n$line"), identity)
+
+  private def withoutTime(json: Json, fields: String*): Json =
+    json.mapObject(o => fields.foldLeft(o)(_.remove(_)))
+
+  /** Same fields as the circe format, apart from time: circe's timeStamp/date/time are replaced by `timestamp`. */
   private def assertSame(r: LogRecord) = {
     val direct = JsonLogFormat.render(r)
     direct should not include "\n"
-    val parsed = io.circe.jawn
-      .parse(direct)
-      .fold(e => fail(s"invalid JSON: $e\n$direct"), identity)
-    sortedKeys.print(parsed) shouldBe sortedKeys.print(
-      CirceJsonLogFormat.logRecord2Json(r)
+    sortedKeys.print(withoutTime(parse(direct), "timestamp")) shouldBe sortedKeys.print(
+      withoutTime(CirceJsonLogFormat.logRecord2Json(r), "timeStamp", "date", "time")
     )
   }
 
@@ -116,10 +121,16 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
         )
       finally MDC.remove("tenant"): Unit
     }
-    "match date and time fields across milliseconds and seconds" in
+    "write timestamp first, as ISO-8601 UTC with exactly 3 fractional digits" in {
+      val expected = java.time.format.DateTimeFormatter
+        .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
+        .withZone(java.time.ZoneOffset.UTC)
       List(1790786235000L, 1790786235007L, 1790786235042L, 1790786235999L,
-        1790786236001L, 0L).foreach { ts =>
-        assertSame(record(List(text("tick")), timeStamp = ts))
+        1790786236001L, 1790812799999L, 1790812800000L, 0L).foreach { ts =>
+        val line = JsonLogFormat.render(record(List(text("tick")), timeStamp = ts))
+        line should startWith(s"""{"timestamp":"${expected.format(java.time.Instant.ofEpochMilli(ts))}",""")
+        parse(line).asObject.get.keys.toList should not contain allOf("timeStamp", "date", "time")
       }
+    }
   }
 }

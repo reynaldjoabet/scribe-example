@@ -3,10 +3,10 @@ package app.logging
 import zio.*
 import zio.http.*
 
-/**
- * zio-http middleware: annotates every log inside a request with a request id (from X-Request-ID or freshly
- * generated), method and path, and echoes the id back in the response.
- */
+/** zio-http middleware: annotates every log inside a request with a request id
+  * (from X-Request-ID or freshly generated), method and path, and echoes the id
+  * back in the response.
+  */
 object RequestContext {
   def apply[R](routes: Routes[R, Response]): Routes[R, Response] =
     routes.transform[R] { next =>
@@ -14,7 +14,9 @@ object RequestContext {
       Handler.scoped[R] {
         handler { (request: Request) =>
           for {
-            requestId <- ZIO.succeed(request.rawHeader("X-Request-ID")).someOrElseZIO(Random.nextUUID.map(_.toString))
+            requestId <- ZIO
+              .succeed(request.rawHeader("X-Request-ID"))
+              .someOrElseZIO(Random.nextUUID.map(_.toString))
             response <- ZIO.logAnnotate(
               LogAnnotation("requestId", requestId),
               LogAnnotation("method", request.method.name),

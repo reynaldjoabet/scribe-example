@@ -16,7 +16,9 @@ object OrderRepository {
         def find(id: OrderId): UIO[Option[Order]] = ref.get.map(_.get(id))
 
         def updateStatus(id: OrderId, status: OrderStatus): UIO[Unit] =
-          ref.update(orders => orders.updatedWith(id)(_.map(_.copy(status = status))))
+          ref.update(orders =>
+            orders.updatedWith(id)(_.map(_.copy(status = status)))
+          )
       }
     }
   }

@@ -13,8 +13,12 @@ import scala.jdk.CollectionConverters.*
 
 class LogSpec extends AnyWordSpec with Matchers {
   private val records = new ConcurrentLinkedQueue[LogRecord]
-  Logger("test.capture").orphan().clearHandlers().withMinimumLevel(Level.Info)
-    .withHandler(LogHandler(Level.Trace)(r => records.add(r))).replace()
+  Logger("test.capture")
+    .orphan()
+    .clearHandlers()
+    .withMinimumLevel(Level.Info)
+    .withHandler(LogHandler(Level.Trace)(r => records.add(r)))
+    .replace()
 
   "Log" should {
     "attach fiber-local context, including across fiber boundaries" in {
@@ -22,7 +26,9 @@ class LogSpec extends AnyWordSpec with Matchers {
       (for {
         ctx <- LogContext.create
         log = Log.named[IO]("test.capture", ctx)
-        _ <- ctx.scoped("requestId" -> "r1")(IO.cede *> log.info("inside").start.flatMap(_.join))
+        _ <- ctx.scoped("requestId" -> "r1")(
+          IO.cede *> log.info("inside").start.flatMap(_.join)
+        )
         _ <- log.info("outside")
       } yield ()).unsafeRunSync()
       val rs = records.asScala.toList
@@ -33,7 +39,9 @@ class LogSpec extends AnyWordSpec with Matchers {
       var evaluated = false
       (for {
         ctx <- LogContext.create
-        _ <- Log.named[IO]("test.capture", ctx).debug { evaluated = true; "nope" }
+        _ <- Log.named[IO]("test.capture", ctx).debug {
+          evaluated = true; "nope"
+        }
       } yield ()).unsafeRunSync()
       evaluated shouldBe false
       records.isEmpty shouldBe true

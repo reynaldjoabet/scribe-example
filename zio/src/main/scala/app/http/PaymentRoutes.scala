@@ -9,12 +9,16 @@ import zio.http.*
 
 object PaymentRoutes {
   def apply(payments: PaymentService): Routes[Any, Response] = Routes(
-    Method.POST / "orders" / string("id") / "charge" -> handler { (id: String, _: Request) =>
-      val orderId = OrderId(id)
-      payments.charge(orderId).fold(
-        error => json(errorStatus(error), ErrorResponse.from(error)),
-        result => json(resultStatus(result), ChargeResponse.from(orderId, result))
-      )
+    Method.POST / "orders" / string("id") / "charge" -> handler {
+      (id: String, _: Request) =>
+        val orderId = OrderId(id)
+        payments
+          .charge(orderId)
+          .fold(
+            error => json(errorStatus(error), ErrorResponse.from(error)),
+            result =>
+              json(resultStatus(result), ChargeResponse.from(orderId, result))
+          )
     }
   )
 
@@ -24,9 +28,9 @@ object PaymentRoutes {
   }
 
   private def errorStatus(error: PaymentError): Status = error match {
-    case _: PaymentError.OrderNotFound => Status.NotFound
-    case _: PaymentError.AlreadyPaid => Status.Conflict
-    case _: PaymentError.InvalidAmount => Status.UnprocessableEntity
+    case _: PaymentError.OrderNotFound      => Status.NotFound
+    case _: PaymentError.AlreadyPaid        => Status.Conflict
+    case _: PaymentError.InvalidAmount      => Status.UnprocessableEntity
     case _: PaymentError.GatewayUnavailable => Status.ServiceUnavailable
   }
 

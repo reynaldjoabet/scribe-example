@@ -1,7 +1,7 @@
 ThisBuild / scalaVersion := "3.9.0"
-ThisBuild / version      := "0.1.0-SNAPSHOT"
+ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / crossScalaVersions := Seq("3.3.8","3.9.0")
+ThisBuild / crossScalaVersions := Seq("3.3.8", "3.9.0")
 
 ThisBuild / scalacOptions := Seq(
   "-encoding",
@@ -26,6 +26,7 @@ val http4s = "0.23.30"
 val zio = "2.1.21"
 val zioHttp = "3.5.1"
 val scalaTest = "3.2.19"
+val circe = "0.14.15"
 
 lazy val root = project
   .in(file("."))
@@ -35,9 +36,10 @@ lazy val root = project
 // Domain models and effect-agnostic logging: JSON format, async stdout writer, Scribe setup
 lazy val common = project.settings(
   libraryDependencies ++= Seq(
-    "com.outr" %% "scribe"            % scribe,
-    "com.outr" %% "scribe-json-circe" % scribe,
-    "com.outr" %% "scribe-slf4j2"     % scribe
+    "com.outr" %% "scribe" % scribe,
+    "com.outr" %% "scribe-slf4j2" % scribe,
+    // JsonLogFormat renders JSON directly; circe is only for HTTP bodies and Json values passed to data(...)
+    "io.circe" %% "circe-core" % circe
   )
 )
 
@@ -47,12 +49,14 @@ lazy val catsApp = project
   .dependsOn(common)
   .settings(
     libraryDependencies ++= Seq(
-      "com.outr"      %% "scribe-cats"         % scribe,
-      "org.http4s"    %% "http4s-ember-server" % http4s,
-      "org.http4s"    %% "http4s-dsl"          % http4s,
-      "org.http4s"    %% "http4s-circe"        % http4s,
-      "org.typelevel" %% "log4cats-slf4j"      % "2.7.0",
-      "org.scalatest" %% "scalatest"           % scalaTest % Test
+      "com.outr" %% "scribe-cats" % scribe,
+      "org.http4s" %% "http4s-ember-server" % http4s,
+      "org.http4s" %% "http4s-dsl" % http4s,
+      "org.http4s" %% "http4s-circe" % http4s,
+      "org.typelevel" %% "log4cats-slf4j" % "2.7.0",
+      "org.scalatest" %% "scalatest" % scalaTest % Test,
+      // reference implementation for JsonLogFormatSpec and HandleBenchmark only
+      "com.outr" %% "scribe-json-circe" % scribe % Test
     ),
     // specs assert on log data typed Map[String, Any], which strict equality can't compare
     Test / scalacOptions -= "-language:strictEquality",
@@ -66,8 +70,8 @@ lazy val zioApp = project
   .dependsOn(common)
   .settings(
     libraryDependencies ++= Seq(
-      "dev.zio"       %% "zio"       % zio,
-      "dev.zio"       %% "zio-http"  % zioHttp,
+      "dev.zio" %% "zio" % zio,
+      "dev.zio" %% "zio-http" % zioHttp,
       "org.scalatest" %% "scalatest" % scalaTest % Test
     ),
     // ZIO's provide/layer macros emit trees that -Xcheck-macros rejects

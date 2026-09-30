@@ -17,7 +17,9 @@ object OrderRepository {
         def find(id: OrderId): F[Option[Order]] = ref.get.map(_.get(id))
 
         def updateStatus(id: OrderId, status: OrderStatus): F[Unit] =
-          ref.update(orders => orders.updatedWith(id)(_.map(_.copy(status = status))))
+          ref.update(orders =>
+            orders.updatedWith(id)(_.map(_.copy(status = status)))
+          )
       }
     }
 }

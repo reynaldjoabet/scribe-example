@@ -3,7 +3,12 @@ package app.logging
 import cats.effect.{Resource, Sync}
 
 object CatsLogging {
-  /** Acquire first in `IOApp.run`; release drains and flushes queued logs on shutdown (incl. SIGTERM). */
+
+  /** Acquire first in `IOApp.run`; release drains and flushes queued logs on
+    * shutdown (incl. SIGTERM).
+    */
   def resource[F[_]](implicit F: Sync[F]): Resource[F, Unit] =
-    Resource.make(F.delay(LoggingSetup.init()))(_ => F.delay(LoggingSetup.shutdown()))
+    Resource.make(F.delay(LoggingSetup.init()))(_ =>
+      F.delay(LoggingSetup.shutdown())
+    )
 }

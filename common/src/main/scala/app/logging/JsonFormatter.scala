@@ -4,7 +4,7 @@ import io.circe.Json
 import scribe.LogRecord
 import scribe.message.Message
 import scribe.format.Formatter
-import scribe.output.TextOutput
+import scribe.output.{LogOutput, TextOutput}
 import scribe.throwable.Trace
 
 /** Renders a LogRecord as one JSON line, written straight into a StringBuilder.
@@ -14,18 +14,17 @@ import scribe.throwable.Trace
   * than via a circe AST: that AST was the single biggest cost per log line, and
   * this runs on the calling (compute) thread.
   */
-object JsonLogFormat {
+object JsonFormatter extends Formatter {
 
-  /** Scribe Formatter producing the JSON line; use it with any Writer (e.g.
-    * AsyncStdoutWriter).
-    */
-  val formatter: Formatter = (record: LogRecord) =>
-    new TextOutput(render(record))
+  /** Use it with any Writer (e.g. AsyncStdoutWriter). */
+  override def format(record: LogRecord): LogOutput = new TextOutput(
+    render(record)
+  )
 
   def render(record: LogRecord): String = {
     val sb = new java.lang.StringBuilder(512)
     sb.append("{\"timestamp\":\"")
-    LogJsonFields.appendTimestamp(sb, record.timeStamp)
+    JsonLogFields.appendTimestamp(sb, record.timeStamp)
     sb.append('"')
     sb.append(",\"level\":")
     string(sb, record.level.name)
@@ -51,7 +50,7 @@ object JsonLogFormat {
 
   // null / single value / array, like Scribe's JSON support
   private def messages(sb: java.lang.StringBuilder, record: LogRecord): Unit =
-    LogJsonFields.textMessages(record) match {
+    JsonLogFields.textMessages(record) match {
       case Nil           => sb.append("null"): Unit
       case single :: Nil => message(sb, single)
       case many          =>
@@ -72,7 +71,7 @@ object JsonLogFormat {
   private def data(sb: java.lang.StringBuilder, record: LogRecord): Unit = {
     sb.append('{')
     var first = true
-    LogJsonFields.data(record).foreach { (key, value) =>
+    JsonLogFields.data(record).foreach { (key, value) =>
       if (!first) sb.append(','): Unit
       first = false
       string(sb, key)
@@ -98,7 +97,7 @@ object JsonLogFormat {
       }
 
   private def traces(sb: java.lang.StringBuilder, record: LogRecord): Unit =
-    LogJsonFields.traces(record) match {
+    JsonLogFields.traces(record) match {
       case Nil           => sb.append("null"): Unit
       case single :: Nil => trace(sb, single)
       case many          =>

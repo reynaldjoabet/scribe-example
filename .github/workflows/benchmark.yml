@@ -1,20 +1,24 @@
 name: Logging benchmark
 
-# Runs bench/run.sh (ProductionBenchmark: Log[IO] + LogContext vs scribe-cats) and publishes a Markdown report to the
+# Runs bench/run.sh (cats Log[IO] + LogContext vs ZIO ZIO.log* + ScribeZLogger) and publishes a Markdown report to the
 # run's summary page, plus the raw results as an artifact.
 #
 # Pull requests are compared against their base commit, pushes to main against the previous main commit, and manual
 # runs against the `baseline` input. Baseline and candidate are benchmarked interleaved on the same runner, because
 # numbers from different runs of a shared runner aren't comparable. The job fails if the custom logger ever tags a log
 # line with a missing or wrong requestId; performance changes are reported, not enforced (runners are too noisy).
+# A baseline is only compared if it has the same benchmark layout (bench/run.sh drives both checkouts).
 
 on:
   pull_request:
     branches: [main]
     paths:
       - "common/src/main/**"
+      - "common/src/test/scala/app/logging/BenchSupport.scala"
       - "cats/src/main/**"
-      - "cats/src/test/scala/app/logging/ProductionBenchmark.scala"
+      - "cats/src/test/scala/app/logging/CatsProductionBenchmark.scala"
+      - "zio/src/main/**"
+      - "zio/src/test/scala/app/logging/ZioProductionBenchmark.scala"
       - "bench/**"
       - "build.sbt"
       - "project/**"
@@ -23,8 +27,11 @@ on:
     branches: [main]
     paths:
       - "common/src/main/**"
+      - "common/src/test/scala/app/logging/BenchSupport.scala"
       - "cats/src/main/**"
-      - "cats/src/test/scala/app/logging/ProductionBenchmark.scala"
+      - "cats/src/test/scala/app/logging/CatsProductionBenchmark.scala"
+      - "zio/src/main/**"
+      - "zio/src/test/scala/app/logging/ZioProductionBenchmark.scala"
       - "bench/**"
       - "build.sbt"
       - "project/**"
@@ -85,8 +92,8 @@ jobs:
                 git -C candidate rev-parse --verify --quiet "origin/$ref^{commit}" || true)
           if [ -z "$sha" ]; then
             echo "::warning::Baseline '$ref' not found; running without comparison"
-          elif ! git -C candidate cat-file -e "$sha:bench/run.sh" 2>/dev/null; then
-            echo "::notice::Baseline $sha predates bench/run.sh; running without comparison"
+          elif ! git -C candidate cat-file -e "$sha:zio/src/test/scala/app/logging/ZioProductionBenchmark.scala" 2>/dev/null; then
+            echo "::notice::Baseline $sha predates the cats vs ZIO benchmark; running without comparison"
           else
             echo "Baseline: $ref ($sha)"
             echo "sha=$sha" >> "$GITHUB_OUTPUT"

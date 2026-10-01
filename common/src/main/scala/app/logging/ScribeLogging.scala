@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
   * `init`/`shutdown` in its effect system's lifecycle (a cats-effect Resource,
   * a ZIO bootstrap layer) so queued logs are flushed when the app stops.
   */
-object LoggingSetup {
+object ScribeLogging {
   private lazy val stdout = new AsyncStdoutWriter(capacity = 65536)
   private val initialized = new AtomicBoolean(false)
 
@@ -30,7 +30,7 @@ object LoggingSetup {
       .withMinimumLevel(level)
       .withHandler(
         // The formatter renders each record (a JSON line, or text for local dev); the writer only moves lines to stdout
-        formatter = if (json) JsonLogFormat.formatter else Formatter.strict,
+        formatter = if (json) JsonFormatter else Formatter.strict,
         writer = stdout,
         outputFormat =
           ASCIIOutputFormat // never emit ANSI escapes, even if TERM is set in the container

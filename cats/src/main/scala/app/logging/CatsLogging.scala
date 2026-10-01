@@ -8,7 +8,7 @@ object CatsLogging {
     * shutdown (incl. SIGTERM).
     */
   def resource[F[_]](implicit F: Sync[F]): Resource[F, Unit] =
-    Resource.make(F.delay(LoggingSetup.init()))(_ =>
-      F.delay(LoggingSetup.shutdown())
+    Resource.make(F.delay(ScribeLogging.init()))(_ =>
+      F.delay(ScribeLogging.shutdown())
     )
 }

@@ -75,18 +75,16 @@ object FormatBenchmark {
   // Each returns the line's length: String for the String-based pipeline, bytes for a byte-based one
   private val formatters: List[(String, LogRecord => Int)] = List(
     "circe (Scribe's support)" -> (r =>
-      CirceJsonLogFormat
-        .json2String(CirceJsonLogFormat.logRecord2Json(r))
+      CirceFormatter
+        .json2String(CirceFormatter.logRecord2Json(r))
         .length
     ),
-    "StringBuilder -> String" -> (r => JsonLogFormat.render(r).length),
-    "jsoniter -> String" -> (r => JsoniterJsonLogFormat.render(r).length),
+    "StringBuilder -> String" -> (r => JsonFormatter.render(r).length),
+    "jsoniter -> String" -> (r => JsoniterFormatter.render(r).length),
     "StringBuilder -> UTF-8 bytes" -> (r =>
-      JsonLogFormat.render(r).getBytes(StandardCharsets.UTF_8).length
+      JsonFormatter.render(r).getBytes(StandardCharsets.UTF_8).length
     ),
-    "jsoniter -> UTF-8 bytes" -> (r =>
-      JsoniterJsonLogFormat.renderBytes(r).length
-    )
+    "jsoniter -> UTF-8 bytes" -> (r => JsoniterFormatter.renderBytes(r).length)
   )
 
   @volatile private var sink = 0L
@@ -115,7 +113,7 @@ object FormatBenchmark {
     )
     cases.foreach { (name, r, n) =>
       val bytes =
-        JsonLogFormat.render(r).getBytes(StandardCharsets.UTF_8).length
+        JsonFormatter.render(r).getBytes(StandardCharsets.UTF_8).length
       (1 to 5).foreach(_ =>
         formatters.foreach((_, f) => nsPerOp(f, r, n))
       ) // warm-up (JIT)

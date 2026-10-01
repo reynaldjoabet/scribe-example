@@ -47,7 +47,7 @@ class AsyncStdoutWriterSpec extends AnyWordSpec with Matchers {
       val stream = new StalledStream
       val writer = new AsyncStdoutWriter(
         capacity = 100,
-        importantWaitMillis = 50L,
+        warnMaxWaitMillis = 50L,
         stream = stream
       )
 

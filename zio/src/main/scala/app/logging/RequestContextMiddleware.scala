@@ -7,7 +7,7 @@ import zio.http.*
   * (from X-Request-ID or freshly generated), method and path, and echoes the id
   * back in the response.
   */
-object RequestContext {
+object RequestContextMiddleware {
   def apply[R](routes: Routes[R, Response]): Routes[R, Response] =
     routes.transform[R] { next =>
       // Handler.scoped: `next(request)` needs the per-request Scope the server provides (same pattern as zio-http's @@)

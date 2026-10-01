@@ -4,7 +4,7 @@ This is what happens when your code calls `log.info("payment approved", data("or
 HTTP request arrives
    │
    ▼
-RequestContext ── puts requestId/method/path into ──► LogContext (per-fiber storage)
+RequestContextMiddleware ── puts requestId/method/path into ──► LogContext (per-fiber storage)
    │
    ▼
 PaymentService calls log.info(...)
@@ -13,10 +13,10 @@ PaymentService calls log.info(...)
 Log ── is INFO enabled? no → do nothing, cost ≈ 0
    │   yes → build the record + attach everything from LogContext
    ▼
-Scribe's Logger (level filters, the handler set up by LoggingSetup)
+Scribe's Logger (level filters, the handler set up by ScribeLogging)
    │
    ▼
-JsonLogFormat ── turns the record into one JSON line
+JsonFormatter ── turns the record into one JSON line
    │
    ▼
 AsyncStdoutWriter ── queues the line; a background thread writes it to stdout
@@ -41,7 +41,7 @@ This holds `key/value` pairs such as `requestId`, `userId` and `traceId` that sh
 
 Scribe's built-in MDC stores these on the thread. cats-effect runs your code as fibers that move between threads, so thread-based context either gets lost or ends up on another request's logs. `LogContext` uses `IOLocal`, which belongs to the fiber, so the context follows your code wherever it runs. `ctx.scoped("requestId" -> id)(work)` sets the values for the duration of `work` and restores the previous ones afterwards.
 
-`RequestContext.scala`: fills in `LogContext` for each HTTP request
+`RequestContextMiddleware.scala`: fills in `LogContext` for each HTTP request
 This is http4s middleware wrapped around your routes. For each request it:
 - takes `X-Request-ID` from the incoming headers, or generates one
 - puts `requestId`, `method` and `path` into `LogContext` for that request
@@ -54,7 +54,7 @@ It receives the finished JSON line and writes it out:
 
 - The JSON is built on your fiber's thread. That's CPU work, so it spreads across all cores and belongs there.
 - Writing to stdout happens on one background thread. That's blocking I/O, which shouldn't run on cats-effect's compute threads. If stdout slows down, for example because the log collector is backed up, the queue fills rather than your request threads stalling.
-- If the queue is completely full (`65,536` lines), new lines are dropped and counted. Losing a log line is better than hanging the whole service. LoggingSetup.dropped gives you the count to export as a metric.
+- If the queue is completely full (`65,536` lines), new lines are dropped and counted. Losing a log line is better than hanging the whole service. ScribeLogging.dropped gives you the count to export as a metric.
 - It writes through a 64 KB buffer and flushes when the queue is empty, so it makes a few large writes rather than one system call per line.
 
 Why JSON at all: collectors like Datadog, Loki, ELK and CloudWatch parse each JSON line into searchable fields. With plain text you can only search free text, so a query like "all errors for order ord-4" becomes guesswork.
@@ -153,7 +153,7 @@ This is what happens when Hikari logs a warning in your scribe-example app:
       │
       ├─ isWarnEnabled()? ──► scribe.Logger(name).includes(Warn)
       │                          (Scribe's level config, incl. Logger.minimumLevels
-      │                           "com.zaxxer.hikari" -> Warn from LoggingSetup)
+      │                           "com.zaxxer.hikari" -> Warn from ScribeLogging)
       │     no → return, nothing formatted
       │
       ├─ SLF4J's MessageFormatter fills {} placeholders
@@ -167,7 +167,7 @@ This is what happens when Hikari logs a warning in your scribe-example app:
       ▼
  scribe.Logger(name).log(record)
       ▼
- JsonLogFormat (adds MDC values put via org.slf4j.MDC) → AsyncStdoutWriter → stdout
+ JsonFormatter (adds MDC values put via org.slf4j.MDC) → AsyncStdoutWriter → stdout
  ```
 
 `org.slf4j.MDC` is stored on the thread, in Scribe's thread-local MDC. That's fine for libraries that set and read it on one thread. It doesn't follow cats-effect or ZIO fibers, which is why your code uses `LogContext` or `logAnnotate`

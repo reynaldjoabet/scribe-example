@@ -11,7 +11,7 @@ import java.util.UUID
 /** http4s middleware: puts a request id (from X-Request-ID or freshly
   * generated) into the log context.
   */
-object RequestContext {
+object RequestContextMiddleware {
   def apply[F[_]: Sync: LiftIO](
       ctx: LogContext
   )(routes: HttpRoutes[F]): HttpRoutes[F] = Kleisli { req =>

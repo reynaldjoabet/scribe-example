@@ -8,10 +8,10 @@ import scribe.throwable.Trace
 import java.time.{LocalDateTime, ZoneOffset}
 
 /** What goes into a JSON log line, shared by every JSON formatter
-  * (JsonLogFormat, JsoniterJsonLogFormat) so their output can't drift apart.
-  * Each formatter only decides how to write these values.
+  * (JsonFormatter, JsoniterFormatter) so their output can't drift apart. Each
+  * formatter only decides how to write these values.
   */
-private[logging] object LogJsonFields {
+private[logging] object JsonLogFields {
 
   /** Text messages only (stack traces go to "trace"): the same selection as
     * Scribe's own JSON support.

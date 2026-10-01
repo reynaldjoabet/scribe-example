@@ -5,13 +5,13 @@ import scribe.LogRecord
 import scribe.json.ScribeCirceJsonSupport
 import scribe.mdc.MDC
 
-/** The previous circe-based JsonLogFormat, kept as the reference for
-  * JsonLogFormatSpec and HandleBenchmark. Scribe's circe format, but with
+/** The previous circe-based JsonFormatter, kept as the reference for
+  * JsonFormatterSpec and HandleBenchmark. Scribe's circe format, but with
   * `data` as a JSON object with typed values (Scribe emits an array of string
   * pairs, which log backends can't index) and without the always-empty `mdc` /
   * `column` fields.
   */
-object CirceJsonLogFormat extends ScribeCirceJsonSupport {
+object CirceFormatter extends ScribeCirceJsonSupport {
   override def jsonExtras(record: LogRecord, json: Json): Json =
     json.mapObject { o =>
       val data =

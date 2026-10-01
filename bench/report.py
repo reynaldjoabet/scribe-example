@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Summarise bench/run.sh results as Markdown on stdout (e.g. for $GITHUB_STEP_SUMMARY).
+"""Summarise bench/run.sh results (cats vs ZIO logging) as Markdown on stdout, e.g. for $GITHUB_STEP_SUMMARY.
 
 Usage: bench/report.py <results-dir> [--baseline LABEL --candidate LABEL] [--check] [--noise PCT]
 
   Reports medians across rounds for every <label>.jsonl in <results-dir>:
-    - correctness: log lines with a missing/wrong requestId, per variant
-    - the request scenario and the disabled-debug scenario, per variant
-    - the cost of logging itself (minus the no-logging baseline): custom vs scribe-cats
-  With --baseline/--candidate: the change per metric, marked better/worse only beyond the noise threshold.
-  The `none` variant runs no logging code, so its change shows how noisy the machine was.
-  --check: exit 1 if the `custom` variant logged any line with a missing or wrong requestId.
+    - correctness: log lines with a missing/wrong requestId, for cats and ZIO
+    - the cost of logging itself: each runtime minus its own no-logging baseline (cats - cats-baseline, zio - zio-baseline),
+      since cats-effect and ZIO have different costs before any logging happens
+    - the full per-scenario numbers for all four variants
+  With --baseline/--candidate: the change per metric between two checkouts, marked better/worse only beyond the noise
+  threshold. The *-baseline variants run no logging code, so their change shows how noisy the machine was.
+  --check: exit 1 if cats or ZIO logged any line with a missing or wrong requestId.
 """
 import argparse
 import json
@@ -18,13 +19,14 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-VARIANTS = ["none", "custom", "scribe-cats-data", "scribe-cats-mdc"]
+VARIANTS = ["cats-baseline", "cats", "zio-baseline", "zio"]
 VARIANT_NOTES = {
-    "none": "no logging (baseline)",
-    "custom": "Log[IO] + LogContext",
-    "scribe-cats-data": "scribe.cats.io + data(...) per call",
-    "scribe-cats-mdc": "scribe.cats.io + thread-local MDC",
+    "cats-baseline": "cats-effect, no logging",
+    "cats": "Log[IO] + LogContext",
+    "zio-baseline": "ZIO, no logging",
+    "zio": "ZIO.log* + logAnnotate -> ScribeZLogger",
 }
+RUNTIMES = [("cats", "cats-baseline"), ("zio", "zio-baseline")]
 
 # metric -> (label, better, format, noise multiplier). Latency/throughput are noisier than CPU/allocation.
 METRICS = {
@@ -46,20 +48,26 @@ METRICS = {
 }
 COMPARED = {"requests": ["reqPerSec", "p99Ms", "cpuUsPerReq", "allocKbPerReq"], "debug-hot": ["nsPerCall", "bytesPerCall"]}
 
+# The cost of logging: (scenario, metric, label, format)
+COSTS = [
+    ("requests", "cpuUsPerReq", "CPU µs per request", "{:.1f}"),
+    ("requests", "allocKbPerReq", "Allocated KB per request", "{:.1f}"),
+    ("debug-hot", "nsPerCall", "Disabled debug: ns per call", "{:.1f}"),
+    ("debug-hot", "bytesPerCall", "Disabled debug: bytes per call", "{:.1f}"),
+]
+
 
 def load(results_dir):
     """label -> scenario -> variant -> metric -> [values]"""
-    data = {}
-    env = {}
+    data, env = {}, {}
     for path in sorted(Path(results_dir).glob("*.jsonl")):
         runs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            env = {"cores": row["cores"], "java": row["java"]}
-            for metric, value in row["metrics"].items():
-                runs[row["scenario"]][row["variant"]][metric].append(value)
+            if line.strip():
+                row = json.loads(line)
+                env = {"cores": row["cores"], "java": row["java"]}
+                for metric, value in row["metrics"].items():
+                    runs[row["scenario"]][row["variant"]][metric].append(value)
         data[path.stem] = runs
     return data, env
 
@@ -72,10 +80,12 @@ def fmt(value, pattern):
     return "–" if value is None else pattern.format(value)
 
 
-def pct_change(base, cand):
-    if base in (None, 0) or cand is None:
-        return None
-    return (cand - base) / abs(base) * 100
+def metric(runs, scenario, variant, name):
+    return median(runs.get(scenario, {}).get(variant, {}).get(name, []))
+
+
+def rounds_of(runs, scenario):
+    return max((len(vals) for m in runs.get(scenario, {}).values() for vals in m.values()), default=0)
 
 
 def verdict(change, better, noise):
@@ -89,50 +99,41 @@ def verdict(change, better, noise):
 
 def correctness_table(runs):
     rows = ["| Variant | Lines checked | Missing requestId | Wrong requestId |", "|---|---:|---:|---:|"]
-    for v in VARIANTS[1:]:
-        m = runs.get("verify", {}).get(v)
-        if not m:
-            continue
-        rows.append(f"| `{v}` ({VARIANT_NOTES[v]}) | {fmt(median(m['checked']), '{:,.0f}')} | "
-                    f"{fmt(median(m['missing']), '{:,.0f}')} | {fmt(median(m['wrong']), '{:,.0f}')} |")
+    for v, _ in RUNTIMES:
+        if runs.get("verify", {}).get(v):
+            rows.append(f"| `{v}` ({VARIANT_NOTES[v]}) | {fmt(metric(runs, 'verify', v, 'checked'), '{:,.0f}')} | "
+                        f"{fmt(metric(runs, 'verify', v, 'missing'), '{:,.0f}')} | "
+                        f"{fmt(metric(runs, 'verify', v, 'wrong'), '{:,.0f}')} |")
+    return rows
+
+
+def cost_table(runs):
+    """Each runtime's logging variant minus its own no-logging baseline."""
+    rows = ["| Cost of logging | `cats` | `zio` | Cheaper |", "|---|---:|---:|---|"]
+    for scenario, name, label, pattern in COSTS:
+        costs = {}
+        for v, base in RUNTIMES:
+            with_logging, without = metric(runs, scenario, v, name), metric(runs, scenario, base, name)
+            costs[v] = None if with_logging is None or without is None else with_logging - without
+        c, z = costs["cats"], costs["zio"]
+        if c is None or z is None:
+            cheaper = "–"
+        elif min(c, z) <= 0 or abs(c - z) / max(c, z) < 0.10:
+            cheaper = "≈ same"
+        else:
+            cheaper = f"cats, {z / c:.1f}× less" if c < z else f"zio, {c / z:.1f}× less"
+        rows.append(f"| {label} | {fmt(c, pattern)} | {fmt(z, pattern)} | {cheaper} |")
     return rows
 
 
 def scenario_table(runs, scenario):
     metrics = METRICS[scenario]
-    header = "| Variant | " + " | ".join(label for label, *_ in metrics.values()) + " |"
-    rows = [header, "|---|" + "---:|" * len(metrics)]
+    rows = ["| Variant | " + " | ".join(label for label, *_ in metrics.values()) + " |",
+            "|---|" + "---:|" * len(metrics)]
     for v in VARIANTS:
-        m = runs.get(scenario, {}).get(v)
-        if not m:
-            continue
-        cells = [fmt(median(m.get(k, [])), f) for k, (_, _, f, _) in metrics.items()]
-        rows.append(f"| `{v}` | " + " | ".join(cells) + " |")
-    rounds = max((len(vals) for m in runs.get(scenario, {}).values() for vals in m.values()), default=0)
-    return rows, rounds
-
-
-def logging_cost(runs):
-    """CPU and allocation spent on logging: each variant minus the no-logging baseline."""
-    req = runs.get("requests", {})
-    base = req.get("none")
-    if not base:
-        return []
-    def cost(variant, metric):
-        m = req.get(variant)
-        return None if not m else median(m[metric]) - median(base[metric])
-    rows = ["| Logging cost per request | `custom` | `scribe-cats-data` | custom saves |", "|---|---:|---:|---:|"]
-    for metric, label, pattern in [("cpuUsPerReq", "CPU µs", "{:.1f}"), ("allocKbPerReq", "Allocated KB", "{:.1f}")]:
-        c, s = cost("custom", metric), cost("scribe-cats-data", metric)
-        saving = "–" if c is None or not s else f"{(1 - c / s) * 100:.0f}%"
-        rows.append(f"| {label} | {fmt(c, pattern)} | {fmt(s, pattern)} | {saving} |")
-    hot = runs.get("debug-hot", {})
-    if hot.get("none") and hot.get("custom") and hot.get("scribe-cats-data"):
-        for metric, label in [("nsPerCall", "Disabled debug ns/call"), ("bytesPerCall", "Disabled debug bytes/call")]:
-            b = median(hot["none"][metric])
-            c, s = median(hot["custom"][metric]) - b, median(hot["scribe-cats-data"][metric]) - b
-            ratio = "–" if c <= 0 else f"{s / c:.0f}× less"
-            rows.append(f"| {label} | {c:.1f} | {s:.1f} | {ratio} |")
+        if runs.get(scenario, {}).get(v):
+            cells = [fmt(metric(runs, scenario, v, k), f) for k, (_, _, f, _) in metrics.items()]
+            rows.append(f"| `{v}` | " + " | ".join(cells) + " |")
     return rows
 
 
@@ -140,15 +141,14 @@ def comparison_table(base_runs, cand_runs, noise):
     rows = ["| Scenario | Variant | Metric | Baseline | Candidate | Change | |", "|---|---|---|---:|---:|---:|---|"]
     for scenario, keys in COMPARED.items():
         for v in VARIANTS:
-            b, c = base_runs.get(scenario, {}).get(v), cand_runs.get(scenario, {}).get(v)
-            if not b or not c:
-                continue
             for k in keys:
                 label, better, pattern, mult = METRICS[scenario][k]
-                bm, cm = median(b.get(k, [])), median(c.get(k, []))
-                change = pct_change(bm, cm)
+                b, c = metric(base_runs, scenario, v, k), metric(cand_runs, scenario, v, k)
+                if b is None or c is None:
+                    continue
+                change = None if b == 0 else (c - b) / abs(b) * 100
                 change_s = "–" if change is None else f"{change:+.1f}%"
-                rows.append(f"| {scenario} | `{v}` | {label} | {fmt(bm, pattern)} | {fmt(cm, pattern)} | {change_s} | "
+                rows.append(f"| {scenario} | `{v}` | {label} | {fmt(b, pattern)} | {fmt(c, pattern)} | {change_s} | "
                             f"{verdict(change, better, noise * mult)} |")
     return rows
 
@@ -165,49 +165,44 @@ def main():
     data, env = load(args.results_dir)
     if not data:
         sys.exit(f"No *.jsonl results in {args.results_dir}")
-    labels = list(data)
-    main_label = args.candidate or labels[-1]
+    comparing = bool(args.baseline and args.candidate and args.baseline in data and args.candidate in data)
+    labels = [args.baseline, args.candidate] if comparing else list(data)
 
-    out = ["# Logging benchmark: `Log[IO]` + `LogContext` vs scribe-cats", ""]
-    out.append(f"Runner: {env.get('cores', '?')} cores, Java {env.get('java', '?')}. Medians across rounds; "
-               "every variant uses the same output pipeline (JsonLogFormat + AsyncStdoutWriter).")
+    out = ["# Logging benchmark: cats (`Log[IO]` + `LogContext`) vs ZIO (`ZIO.log*` + `ScribeZLogger`)", "",
+           f"Runner: {env.get('cores', '?')} cores, Java {env.get('java', '?')}. Medians across rounds. Both use the "
+           "same workload (256 concurrent requests, 1 ms DB call, 2 INFO + 4 disabled DEBUG each) and the same output "
+           "pipeline (JsonFormatter + AsyncStdoutWriter)."]
 
-    if args.baseline and args.candidate and args.baseline in data and args.candidate in data:
+    if comparing:
         out += ["", f"## Change: `{args.baseline}` → `{args.candidate}`", "",
-                f"Marked better/worse only beyond the noise threshold ({args.noise:g}% for CPU/allocation, "
-                "higher for latency and throughput). `none` runs no logging code, so its change shows how noisy "
-                "this machine was during the run."]
-        rounds = min(scenario_table(data[label], "requests")[1] for label in (args.baseline, args.candidate))
+                f"Marked better/worse only beyond the noise threshold ({args.noise:g}% for CPU/allocation, higher for "
+                "latency and throughput). `cats-baseline` and `zio-baseline` run no logging code, so their change shows how "
+                "noisy this machine was during the run."]
+        rounds = min(rounds_of(data[label], "requests") for label in labels)
         if rounds < 3:
             out += ["", f"> **Only {rounds} round(s):** medians of fewer than 3 rounds are unreliable; treat the "
                         "verdicts below as indicative."]
-        out += [""]
-        out += comparison_table(data[args.baseline], data[args.candidate], args.noise)
+        out += [""] + comparison_table(data[args.baseline], data[args.candidate], args.noise)
 
-    for label in ([args.baseline, args.candidate] if args.baseline and args.candidate else labels):
-        if label not in data:
-            continue
+    for label in labels:
         runs = data[label]
-        out += ["", f"## `{label}`", "", "### Correctness", ""]
-        out += correctness_table(runs)
-        cost = logging_cost(runs)
-        if cost:
-            out += ["", "### Cost of logging (minus the no-logging baseline)", ""] + cost
-        for scenario, title in [("requests", "Requests: 256 concurrent fibers, 1 ms DB call, 2 INFO + 4 disabled DEBUG each"),
-                                ("debug-hot", "Disabled `log.debug` in a hot loop")]:
-            rows, rounds = scenario_table(runs, scenario)
-            if len(rows) > 2:
-                out += ["", f"### {title} ({rounds} round{'s' if rounds != 1 else ''})", ""] + rows
+        out += ["", f"## `{label}`", "", "### Correctness", ""] + correctness_table(runs)
+        out += ["", "### Cost of logging (each runtime minus its own no-logging baseline)", ""] + cost_table(runs)
+        for scenario, title in [("requests", "Requests"), ("debug-hot", "Disabled debug in a hot loop")]:
+            if runs.get(scenario):
+                n = rounds_of(runs, scenario)
+                out += ["", f"### {title} ({n} round{'s' if n != 1 else ''})", ""] + scenario_table(runs, scenario)
 
     print("\n".join(out))
 
     if args.check:
-        m = data[main_label].get("verify", {}).get("custom")
-        bad = (median(m["missing"]) or 0) + (median(m["wrong"]) or 0) if m else None
-        if bad is None:
-            sys.exit("--check: no correctness results for `custom`")
-        if bad > 0:
-            sys.exit(f"--check: `custom` logged {bad:,.0f} lines with a missing or wrong requestId")
+        runs = data[args.candidate] if comparing else data[labels[-1]]
+        for v, _ in RUNTIMES:
+            missing, wrong = metric(runs, "verify", v, "missing"), metric(runs, "verify", v, "wrong")
+            if missing is None or wrong is None:
+                sys.exit(f"--check: no correctness results for `{v}`")
+            if missing + wrong > 0:
+                sys.exit(f"--check: `{v}` logged {missing + wrong:,.0f} lines with a missing or wrong requestId")
 
 
 if __name__ == "__main__":

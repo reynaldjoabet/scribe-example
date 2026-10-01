@@ -31,8 +31,20 @@ val jsoniter = "2.41.2"
 
 lazy val benchClasspath =
   taskKey[File](
-    "Writes catsApp's resolved Test classpath to target/bench-classpath.txt"
+    "Writes the project's resolved Test classpath to target/bench-classpath-<project>.txt"
   )
+
+// Resolved Test classpath for running the benchmarks with plain `java` (bench/run.sh): sbt 2's `export` prints
+// placeholder paths (${OUT}, ${CSR_CACHE}) instead of real ones
+lazy val benchClasspathSetting = benchClasspath := Def.uncached {
+  val converter = fileConverter.value
+  val paths = (Test / fullClasspath).value
+    .map(entry => converter.toPath(entry.data).toAbsolutePath.toString)
+  val out = (ThisBuild / baseDirectory).value / "target" /
+    s"bench-classpath-${thisProject.value.id}.txt"
+  IO.write(out, paths.mkString(java.io.File.pathSeparator))
+  out
+}
 
 lazy val root = project
   .in(file("."))
@@ -44,9 +56,9 @@ lazy val common = project.settings(
   libraryDependencies ++= Seq(
     "com.outr" %% "scribe" % scribe,
     "com.outr" %% "scribe-slf4j2" % scribe,
-    // JsonLogFormat renders JSON directly; circe is only for HTTP bodies and Json values passed to data(...)
+    // JsonFormatter renders JSON directly; circe is only for HTTP bodies and Json values passed to data(...)
     "io.circe" %% "circe-core" % circe,
-    // JsoniterJsonLogFormat, an alternative to JsonLogFormat (core only: the codec is hand-written, no macros)
+    // JsoniterFormatter, an alternative to JsonFormatter (core only: the codec is hand-written, no macros)
     "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % jsoniter
   )
 )
@@ -54,7 +66,9 @@ lazy val common = project.settings(
 // cats-effect + http4s app: Log[F] / LogContext (IOLocal) on top of Scribe
 lazy val catsApp = project
   .in(file("cats"))
-  .dependsOn(common)
+  .dependsOn(
+    common % "compile->compile;test->test"
+  ) // test->test: shared BenchSupport
   .settings(
     libraryDependencies ++= Seq(
       "com.outr" %% "scribe-cats" % scribe,
@@ -63,30 +77,22 @@ lazy val catsApp = project
       "org.http4s" %% "http4s-circe" % http4s,
       "org.typelevel" %% "log4cats-slf4j" % "2.7.0",
       "org.scalatest" %% "scalatest" % scalaTest % Test,
-      // reference implementation for JsonLogFormatSpec and HandleBenchmark only
+      // reference implementation for JsonFormatterSpec and HandleBenchmark only
       "com.outr" %% "scribe-json-circe" % scribe % Test
     ),
     // specs assert on log data typed Map[String, Any], which strict equality can't compare
     Test / scalacOptions -= "-language:strictEquality",
     run / fork := true,
     Test / fork := true,
-    // Resolved Test classpath for running the benchmarks with plain `java` (bench/run.sh): sbt 2's `export` prints
-    // placeholder paths (${OUT}, ${CSR_CACHE}) instead of real ones
-    benchClasspath := Def.uncached {
-      val converter = fileConverter.value
-      val paths = (Test / fullClasspath).value
-        .map(entry => converter.toPath(entry.data).toAbsolutePath.toString)
-      val out =
-        (ThisBuild / baseDirectory).value / "target" / "bench-classpath.txt"
-      IO.write(out, paths.mkString(java.io.File.pathSeparator))
-      out
-    }
+    benchClasspathSetting
   )
 
 // ZIO + zio-http app: ZIO's built-in logging (ZIO.logInfo, logAnnotate) with Scribe as the backend
 lazy val zioApp = project
   .in(file("zio"))
-  .dependsOn(common)
+  .dependsOn(
+    common % "compile->compile;test->test"
+  ) // test->test: shared BenchSupport
   .settings(
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zio,
@@ -97,5 +103,6 @@ lazy val zioApp = project
     scalacOptions -= "-Xcheck-macros",
     Test / scalacOptions -= "-language:strictEquality",
     run / fork := true,
-    Test / fork := true
+    Test / fork := true,
+    benchClasspathSetting
   )

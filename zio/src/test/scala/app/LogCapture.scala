@@ -21,7 +21,9 @@ object LogCapture {
     .replace()
 
   private val runtime: Runtime[Any] =
-    Unsafe.unsafe(implicit u => Runtime.unsafe.fromLayer(ZioLogging.loggers))
+    Unsafe.unsafe(implicit u =>
+      Runtime.unsafe.fromLayer(ZioLogging.scribeLogger)
+    )
 
   /** Clears captured records, runs the effect, returns its Exit. */
   def run[E, A](effect: ZIO[Any, E, A]): Exit[E, A] = {

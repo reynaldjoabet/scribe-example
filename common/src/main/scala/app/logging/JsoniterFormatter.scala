@@ -5,30 +5,29 @@ import io.circe.Json
 import scribe.LogRecord
 import scribe.message.Message
 import scribe.format.Formatter
-import scribe.output.TextOutput
+import scribe.output.{LogOutput, TextOutput}
 import scribe.throwable.Trace
 
 import java.nio.charset.StandardCharsets
 
-/** Same JSON line as [[JsonLogFormat]] (byte for byte), written with
+/** Same JSON line as [[JsonFormatter]] (byte for byte), written with
   * jsoniter-scala's JsonWriter instead of a StringBuilder. The codec is
   * hand-written because a record's `data` holds arbitrary types, which
   * jsoniter's derived codecs can't express.
   */
-object JsoniterJsonLogFormat {
+object JsoniterFormatter extends Formatter {
 
-  /** Scribe Formatter producing the JSON line; use it with any Writer (e.g.
-    * AsyncStdoutWriter).
-    */
-  val formatter: Formatter = (record: LogRecord) =>
-    new TextOutput(render(record))
+  /** Use it with any Writer (e.g. AsyncStdoutWriter). */
+  override def format(record: LogRecord): LogOutput = new TextOutput(
+    render(record)
+  )
 
   def render(record: LogRecord): String =
     try writeToString(record)
     catch {
       // jsoniter rejects strings that aren't valid UTF-16 (e.g. a lone surrogate from a truncated emoji). A log call
       // must never fail because of its content, so fall back to the StringBuilder format, which passes them through.
-      case _: JsonWriterException => JsonLogFormat.render(record)
+      case _: JsonWriterException => JsonFormatter.render(record)
     }
 
   /** UTF-8 bytes directly: jsoniter's native output, skipping the bytes ->
@@ -38,7 +37,7 @@ object JsoniterJsonLogFormat {
     try writeToArray(record)
     catch {
       case _: JsonWriterException =>
-        JsonLogFormat.render(record).getBytes(StandardCharsets.UTF_8)
+        JsonFormatter.render(record).getBytes(StandardCharsets.UTF_8)
     }
 
   private given JsonValueCodec[LogRecord] = new JsonValueCodec[LogRecord] {
@@ -50,7 +49,7 @@ object JsoniterJsonLogFormat {
     override def encodeValue(r: LogRecord, out: JsonWriter): Unit = {
       out.writeObjectStart()
       out.writeNonEscapedAsciiKey("timestamp")
-      out.writeNonEscapedAsciiVal(LogJsonFields.timestamp(r.timeStamp))
+      out.writeNonEscapedAsciiVal(JsonLogFields.timestamp(r.timeStamp))
       out.writeNonEscapedAsciiKey("level")
       string(out, r.level.name)
       out.writeNonEscapedAsciiKey("levelValue")
@@ -75,7 +74,7 @@ object JsoniterJsonLogFormat {
   }
 
   private def messages(out: JsonWriter, r: LogRecord): Unit =
-    LogJsonFields.textMessages(r) match {
+    JsonLogFields.textMessages(r) match {
       case Nil           => out.writeNull()
       case single :: Nil => message(out, single)
       case many          =>
@@ -91,7 +90,7 @@ object JsoniterJsonLogFormat {
 
   private def data(out: JsonWriter, r: LogRecord): Unit = {
     out.writeObjectStart()
-    LogJsonFields.data(r).foreach { (key, value) =>
+    JsonLogFields.data(r).foreach { (key, value) =>
       out.writeKey(key)
       typed(out, value())
     }
@@ -114,7 +113,7 @@ object JsoniterJsonLogFormat {
       }
 
   private def traces(out: JsonWriter, r: LogRecord): Unit =
-    LogJsonFields.traces(r) match {
+    JsonLogFields.traces(r) match {
       case Nil           => out.writeNull()
       case single :: Nil => trace(out, single)
       case many          =>

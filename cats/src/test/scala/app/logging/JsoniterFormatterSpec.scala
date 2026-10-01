@@ -9,9 +9,9 @@ import scribe.output.TextOutput
 import scribe.throwable.TraceLoggableMessage
 import scribe.{Level, LogRecord}
 
-/** JsoniterJsonLogFormat must produce exactly the same bytes as JsonLogFormat.
+/** JsoniterFormatter must produce exactly the same bytes as JsonFormatter.
   */
-class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
+class JsoniterFormatterSpec extends AnyWordSpec with Matchers {
   private def record(
       messages: List[LoggableMessage],
       data: Map[String, () => Any] = Map.empty,
@@ -37,10 +37,10 @@ class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
     LoggableMessage.string2LoggableMessage(s)
 
   private def assertIdentical(r: LogRecord) =
-    JsoniterJsonLogFormat.render(r) shouldBe JsonLogFormat.render(r)
+    JsoniterFormatter.render(r) shouldBe JsonFormatter.render(r)
 
-  "JsoniterJsonLogFormat" should {
-    "match JsonLogFormat for typed data values, including awkward doubles" in assertIdentical(
+  "JsoniterFormatter" should {
+    "match JsonFormatter for typed data values, including awkward doubles" in assertIdentical(
       record(
         List(text("charging order")),
         Map(
@@ -64,7 +64,7 @@ class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
         )
       )
     )
-    "match JsonLogFormat for strings that need escaping" in assertIdentical(
+    "match JsonFormatter for strings that need escaping" in assertIdentical(
       record(
         List(
           text(
@@ -74,7 +74,7 @@ class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
         Map("path \"key\"" -> (() => "C:\\tmp\\\"x\""))
       )
     )
-    "match JsonLogFormat for errors with causes and multiple messages" in {
+    "match JsonFormatter for errors with causes and multiple messages" in {
       val cause = new java.net.SocketTimeoutException("Read timed out")
       assertIdentical(
         record(
@@ -87,7 +87,7 @@ class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
         )
       )
     }
-    "match JsonLogFormat with no method or line, a JSON message, and MDC values" in {
+    "match JsonFormatter with no method or line, a JSON message, and MDC values" in {
       MDC("tenant") = "acme"
       try
         assertIdentical(
@@ -103,14 +103,14 @@ class JsoniterJsonLogFormatSpec extends AnyWordSpec with Matchers {
         )
       finally MDC.remove("tenant"): Unit
     }
-    "match JsonLogFormat for timestamps" in
+    "match JsonFormatter for timestamps" in
       List(0L, 1790786235000L, 1790786235007L, 1790786235042L, 1790812800000L)
         .foreach { ts =>
           assertIdentical(record(List(text("tick")), timeStamp = ts))
         }
-    "not fail on a lone surrogate (invalid UTF-16), falling back to JsonLogFormat" in {
+    "not fail on a lone surrogate (invalid UTF-16), falling back to JsonFormatter" in {
       val r = record(List(text("truncated emoji: \uD83D")))
-      noException should be thrownBy JsoniterJsonLogFormat.render(r)
+      noException should be thrownBy JsoniterFormatter.render(r)
       assertIdentical(r)
     }
   }

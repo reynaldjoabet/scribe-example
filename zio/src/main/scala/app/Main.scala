@@ -2,7 +2,7 @@ package app
 
 import app.domain.SampleData
 import app.http.PaymentRoutes
-import app.logging.{RequestContext, ZioLogging}
+import app.logging.{RequestContextMiddleware, ZioLogging}
 import app.payments.{FakePaymentGateway, OrderRepository, PaymentService}
 import zio.*
 import zio.http.*
@@ -14,7 +14,7 @@ object Main extends ZIOAppDefault {
   def run: ZIO[Any, Throwable, Nothing] =
     ZIO
       .serviceWithZIO[PaymentService](payments =>
-        Server.serve(RequestContext(PaymentRoutes(payments)))
+        Server.serve(RequestContextMiddleware(PaymentRoutes(payments)))
       )
       .provide(
         Server.defaultWithPort(

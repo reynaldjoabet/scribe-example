@@ -9,10 +9,10 @@ import scribe.output.TextOutput
 import scribe.throwable.TraceLoggableMessage
 import scribe.{Level, LogRecord}
 
-/** The direct JsonLogFormat must produce exactly what the previous circe-based
+/** The direct JsonFormatter must produce exactly what the previous circe-based
   * format produced.
   */
-class JsonLogFormatSpec extends AnyWordSpec with Matchers {
+class JsonFormatterSpec extends AnyWordSpec with Matchers {
   private val sortedKeys = Printer.noSpaces.copy(sortKeys = true)
 
   private def record(
@@ -47,13 +47,13 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
     * timeStamp/date/time are replaced by `timestamp`.
     */
   private def assertSame(r: LogRecord) = {
-    val direct = JsonLogFormat.render(r)
+    val direct = JsonFormatter.render(r)
     direct should not include "\n"
     sortedKeys.print(
       withoutTime(parse(direct), "timestamp")
     ) shouldBe sortedKeys.print(
       withoutTime(
-        CirceJsonLogFormat.logRecord2Json(r),
+        CirceFormatter.logRecord2Json(r),
         "timeStamp",
         "date",
         "time"
@@ -64,7 +64,7 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
   private def text(s: String): LoggableMessage =
     LoggableMessage.string2LoggableMessage(s)
 
-  "JsonLogFormat" should {
+  "JsonFormatter" should {
     "match the circe format for typed data values" in assertSame(
       record(
         List(text("charging order")),
@@ -84,9 +84,9 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
     // value), failing the effect that logged. The direct format writes JSON null.
     "render null data values as JSON null instead of throwing" in {
       val r = record(List(text("with null")), Map("couponCode" -> (() => null)))
-      an[NullPointerException] should be thrownBy CirceJsonLogFormat
+      an[NullPointerException] should be thrownBy CirceFormatter
         .logRecord2Json(r)
-      JsonLogFormat.render(r) should include("\"data\":{\"couponCode\":null}")
+      JsonFormatter.render(r) should include("\"data\":{\"couponCode\":null}")
     }
     "match the circe format for strings that need escaping" in assertSame(
       record(
@@ -137,7 +137,7 @@ class JsonLogFormatSpec extends AnyWordSpec with Matchers {
       List(1790786235000L, 1790786235007L, 1790786235042L, 1790786235999L,
         1790786236001L, 1790812799999L, 1790812800000L, 0L).foreach { ts =>
         val line =
-          JsonLogFormat.render(record(List(text("tick")), timeStamp = ts))
+          JsonFormatter.render(record(List(text("tick")), timeStamp = ts))
         line should startWith(s"""{"timestamp":"${expected.format(
             java.time.Instant.ofEpochMilli(ts)
           )}",""")

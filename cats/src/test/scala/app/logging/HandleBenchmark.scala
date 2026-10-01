@@ -26,16 +26,16 @@ import java.util.concurrent.atomic.LongAdder
   * Stage modes, each adding one cost (nothing written to stdout):
   *   front             Log -> LogContext -> Scribe routing only; no formatting
   *   text-format       + Formatter.strict (Scribe runs it even in JSON mode unless replaced)
-  *   circe             + JSON via Scribe's circe support (CirceJsonLogFormat)
-  *   direct            + JSON via JsonLogFormat (StringBuilder)
-  *   jsoniter          + JSON via JsoniterJsonLogFormat
+  *   circe             + JSON via Scribe's circe support (CirceFormatter)
+  *   direct            + JSON via JsonFormatter (StringBuilder)
+  *   jsoniter          + JSON via JsoniterFormatter
   * Full pipelines to stdout:
   *   sync              Formatter.strict + circe JSON + Scribe's SystemOutWriter, synchronous
   *   scribe-async      same, through Scribe's AsynchronousLogHandle
-  *   current           Formatter.strict + circe JSON + AsyncStdoutWriter (LoggingSetup before the refinements)
-  *   sync-direct       JsonLogFormat.formatter + SystemOutWriter
-  *   refined           JsonLogFormat.formatter + AsyncStdoutWriter (LoggingSetup now)
-  *   refined-jsoniter  JsoniterJsonLogFormat.formatter + AsyncStdoutWriter
+  *   current           Formatter.strict + circe JSON + AsyncStdoutWriter (ScribeLogging before the refinements)
+  *   sync-direct       JsonFormatter + SystemOutWriter
+  *   refined           JsonFormatter + AsyncStdoutWriter (ScribeLogging now)
+  *   refined-jsoniter  JsoniterFormatter + AsyncStdoutWriter
   * }}}
   */
 object HandleBenchmark {
@@ -93,20 +93,20 @@ object HandleBenchmark {
       case "circe" =>
         Setup(
           noFormatter,
-          CirceJsonLogFormat.writer(Discard),
+          CirceFormatter.writer(Discard),
           SynchronousLogHandle,
           () => ()
         )
       case "direct" =>
         Setup(
-          JsonLogFormat.formatter,
+          JsonFormatter,
           Discard,
           SynchronousLogHandle,
           () => ()
         )
       case "jsoniter" =>
         Setup(
-          JsoniterJsonLogFormat.formatter,
+          JsoniterFormatter,
           Discard,
           SynchronousLogHandle,
           () => ()
@@ -114,14 +114,14 @@ object HandleBenchmark {
       case "sync" =>
         Setup(
           Formatter.strict,
-          CirceJsonLogFormat.writer(SystemOutWriter),
+          CirceFormatter.writer(SystemOutWriter),
           SynchronousLogHandle,
           () => ()
         )
       case "scribe-async" =>
         Setup(
           Formatter.strict,
-          CirceJsonLogFormat.writer(SystemOutWriter),
+          CirceFormatter.writer(SystemOutWriter),
           scribeAsync,
           () => {
             Thread.sleep(2000)
@@ -131,27 +131,27 @@ object HandleBenchmark {
       case "current" =>
         Setup(
           Formatter.strict,
-          CirceJsonLogFormat.writer(asyncWriter),
+          CirceFormatter.writer(asyncWriter),
           SynchronousLogHandle,
           closeAsync
         )
       case "sync-direct" =>
         Setup(
-          JsonLogFormat.formatter,
+          JsonFormatter,
           SystemOutWriter,
           SynchronousLogHandle,
           () => ()
         )
       case "refined" =>
         Setup(
-          JsonLogFormat.formatter,
+          JsonFormatter,
           asyncWriter,
           SynchronousLogHandle,
           closeAsync
         )
       case "refined-jsoniter" =>
         Setup(
-          JsoniterJsonLogFormat.formatter,
+          JsoniterFormatter,
           asyncWriter,
           SynchronousLogHandle,
           closeAsync

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Runs ProductionBenchmark (cats/src/test/scala/app/logging/ProductionBenchmark.scala) for one or more checkouts of
-# this project and writes one JSON line per run to <out-dir>/<label>.jsonl. Summarise with bench/report.py.
+# Runs the cats vs ZIO logging benchmarks for one or more checkouts of this project and writes one JSON line per run to
+# <out-dir>/<label>.jsonl. Summarise with bench/report.py.
 #
-# Checkouts are interleaved round by round (every variant of every checkout runs once per round), so a baseline and a
-# candidate see the same machine conditions: on shared CI runners that matters more than the number of rounds.
+#   cats-baseline  CatsProductionBenchmark baseline  cats-effect, same workload, no logging (cats baseline)
+#   cats           CatsProductionBenchmark logging   Log[IO] + LogContext
+#   zio-baseline   ZioProductionBenchmark baseline   ZIO, same workload, no logging (ZIO baseline)
+#   zio            ZioProductionBenchmark logging    ZIO.log* + ZIO.logAnnotate -> ScribeZLogger
+#
+# Checkouts and variants are interleaved round by round, so everything compared sees the same machine conditions: on
+# shared CI runners that matters more than the number of rounds.
 #
 # Usage: bench/run.sh <out-dir> <rounds> <label>=<project-dir> [<label>=<project-dir> ...]
 #   bench/run.sh bench-results 3 current=.                        # one checkout
@@ -15,7 +20,7 @@
 set -euo pipefail
 
 if [ $# -lt 3 ]; then
-  sed -n '2,13p' "$0"
+  sed -n '2,19p' "$0"
   exit 2
 fi
 
@@ -24,34 +29,45 @@ rounds=$2
 shift 2
 mkdir -p "$out"
 
-variants=(none custom scribe-cats-data scribe-cats-mdc)
+variants=(cats-baseline cats zio-baseline zio)
 labels=()
-classpaths=()
+dirs=()
 
 for target in "$@"; do
   label=${target%%=*}
   dir=${target#*=}
   echo "==> Building $label ($dir)"
-  (cd "$dir" && sbt --client "catsApp/Test/compile; catsApp/benchClasspath")
+  (cd "$dir" && sbt --client "catsApp/Test/compile; zioApp/Test/compile; catsApp/benchClasspath; zioApp/benchClasspath")
   if [ -n "${CI:-}" ]; then
     (cd "$dir" && sbt --client shutdown) || true
   fi
   labels+=("$label")
-  classpaths+=("$(cat "$dir/target/bench-classpath.txt")")
+  dirs+=("$dir")
   : >"$out/$label.jsonl"
 done
 
 JAVA_OPTS=${JAVA_OPTS:-"-Xms1g -Xmx1g"}
 
-# run <index> <args...>: one benchmark JVM for labels[index]; results go to its .jsonl, the summary line to stderr
+# run <index> <variant> <scenario> [verify]: one benchmark JVM for labels[index]; results go to its .jsonl
 run() {
-  local i=$1
-  shift
-  local err
+  local i=$1 variant=$2
+  shift 2
+  local module main mode
+  case "$variant" in
+    cats-baseline) module=catsApp main=app.logging.CatsProductionBenchmark mode=baseline ;;
+    cats) module=catsApp main=app.logging.CatsProductionBenchmark mode=logging ;;
+    zio-baseline) module=zioApp main=app.logging.ZioProductionBenchmark mode=baseline ;;
+    zio) module=zioApp main=app.logging.ZioProductionBenchmark mode=logging ;;
+    *)
+      echo "Unknown variant: $variant" >&2
+      return 1
+      ;;
+  esac
+  local cp err
+  cp=$(cat "${dirs[$i]}/target/bench-classpath-$module.txt")
   err=$(mktemp)
   # shellcheck disable=SC2086 # JAVA_OPTS is intentionally word-split
-  if ! java $JAVA_OPTS -cp "${classpaths[$i]}" app.logging.ProductionBenchmark "$@" \
-    --json "$out/${labels[$i]}.jsonl" >/dev/null 2>"$err"; then
+  if ! java $JAVA_OPTS -cp "$cp" "$main" "$mode" "$@" --json "$out/${labels[$i]}.jsonl" >/dev/null 2>"$err"; then
     cat "$err" >&2
     rm -f "$err"
     return 1
@@ -61,7 +77,7 @@ run() {
 }
 
 echo "==> Correctness (requestId on every log line)"
-for v in custom scribe-cats-data scribe-cats-mdc; do
+for v in cats zio; do
   for i in "${!labels[@]}"; do run "$i" "$v" requests verify; done
 done
 

@@ -30,11 +30,11 @@ import scala.util.control.NonFatal
   * first instead of losing errors:
   *   - above 80% full, lines below WARN are dropped, keeping the remaining room
   *     for WARN/ERROR/FATAL
-  *   - when completely full, WARN and above wait up to `importantWait` for
+  *   - when completely full, WARN and above wait up to `warnMaxWaitMillis` for
   *     space; lower levels are dropped at once
   * Drops are counted (`dropped`) and reported as a WARN line once stdout
   * catches up. A stalled stdout therefore never blocks callers for more than
-  * `importantWait`, and only for WARN+ lines.
+  * `warnMaxWaitMillis`, and only for WARN+ lines.
   *
   * Replaces Scribe's AsynchronousLogHandle, whose worker sleeps 1ms per record
   * (~1000 records/sec) and drops the rest. Use it with the default
@@ -42,7 +42,7 @@ import scala.util.control.NonFatal
   */
 final class AsyncStdoutWriter(
     capacity: Int = 65536,
-    importantWaitMillis: Long = 100L,
+    warnMaxWaitMillis: Long = 100L,
     stream: OutputStream = new FileOutputStream(
       FileDescriptor.out
     ) // overridable for tests
@@ -91,7 +91,7 @@ final class AsyncStdoutWriter(
         }
       val queued = queue.offer(line) || (important && queue.offer(
         line,
-        importantWaitMillis,
+        warnMaxWaitMillis,
         TimeUnit.MILLISECONDS
       ))
       if (queued) pending.incrementAndGet(): Unit else drop()

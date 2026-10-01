@@ -3,7 +3,7 @@ package app.http
 import app.domain.*
 import app.LogCapture
 import app.LogCapture.field
-import app.logging.RequestContext
+import app.logging.RequestContextMiddleware
 import app.payments.{FakePaymentGateway, OrderRepository, PaymentService}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -19,7 +19,7 @@ class PaymentRoutesSpec extends AnyWordSpec with Matchers {
         ZIO
           .serviceWithZIO[PaymentService] { payments =>
             ZIO.scoped(
-              RequestContext(PaymentRoutes(payments))
+              RequestContextMiddleware(PaymentRoutes(payments))
                 .runZIO(
                   Request
                     .post(s"/orders/$orderId/charge", Body.empty)

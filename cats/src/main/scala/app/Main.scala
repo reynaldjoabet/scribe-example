@@ -5,7 +5,7 @@ import app.http.PaymentRoutes
 import app.logging.CatsLogging
 import app.logging.Log
 import app.logging.LogContext
-import app.logging.RequestContext
+import app.logging.RequestContextMiddleware
 import app.payments.FakePaymentGateway
 import app.payments.OrderRepository
 import app.payments.PaymentService
@@ -32,7 +32,7 @@ object Main extends IOApp.Simple {
         gateway,
         Log.forClass[IO](classOf[PaymentService[?]], ctx)
       )
-      app = RequestContext(ctx)(
+      app = RequestContextMiddleware(ctx)(
         new PaymentRoutes[IO](payments).routes
       ).orNotFound
       _ <- EmberServerBuilder

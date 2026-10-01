@@ -21,6 +21,17 @@ class ScribeZLoggerSpec extends AnyWordSpec with Matchers {
       r.line shouldBe defined
       r.field("requestId") shouldBe Some("r1")
     }
+    "keep each call site's own location (they're cached per Trace)" in {
+      val twoSites =
+        ZIO.logInfo("site a") *>
+          ZIO.logInfo("site b")
+      for (_ <- 1 to 2) {
+        LogCapture.run(twoSites)
+        val (a, b) = (LogCapture.record("site a"), LogCapture.record("site b"))
+        b.line.get shouldBe a.line.get + 1
+        a.loggerName shouldBe Some(a.className)
+      }
+    }
     "carry annotations into forked fibers" in {
       LogCapture.run(
         ZIO.logAnnotate("requestId", "r2")(

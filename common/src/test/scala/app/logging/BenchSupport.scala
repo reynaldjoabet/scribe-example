@@ -60,6 +60,7 @@ object BenchSupport {
     * INFO level), or CheckingWriter.
     */
   def setupScribe(verify: Boolean): AsyncStdoutWriter = {
+    LeanMDCMap.install()
     val stdout = new AsyncStdoutWriter(65536)
     Logger.root
       .clearHandlers()

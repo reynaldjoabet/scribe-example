@@ -43,8 +43,10 @@ object CatsProductionBenchmark {
       )(io)
     def info(reqId: String, msg: String, fields: LogFeature*): IO[Unit] =
       log.info((text(msg) +: (fields ++ expected(reqId)))*)
+    // Without verify, exactly what app code writes: log.debug("text")
     def debug(reqId: String, msg: => String): IO[Unit] =
-      log.debug((text(msg) +: expected(reqId))*)
+      if (verify) log.debug(text(msg), data("expected", reqId))
+      else log.debug(msg)
     def warn(reqId: String, msg: String, fields: LogFeature*): IO[Unit] =
       log.warn((text(msg) +: (fields ++ expected(reqId)))*)
     def error(

@@ -6,7 +6,7 @@ import cats.syntax.all.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import scribe.handler.LogHandler
-import scribe.{Level, LogRecord, Logger}
+import scribe.{Level, LogRecord, Logger, data}
 
 import java.util.concurrent.ConcurrentLinkedQueue
 import scala.jdk.CollectionConverters.*
@@ -33,6 +33,21 @@ class LogSpec extends AnyWordSpec with Matchers {
       } yield ()).unsafeRunSync()
       val rs = records.asScala.toList
       rs.map(_.get("requestId")) shouldBe List(Some("r1"), None)
+    }
+    "build the record with messages in order, context, and per-call data winning over context" in {
+      records.clear()
+      (for {
+        ctx <- LogContext.create
+        log = Log.named[IO]("test.capture", ctx)
+        _ <- ctx.scoped("requestId" -> "from-context", "user" -> "u1")(
+          log.info("first", data("requestId", "per-call"), "second")
+        )
+      } yield ()).unsafeRunSync()
+      val r = records.asScala.head
+      r.messages.map(_.logOutput.plainText) shouldBe List("first", "second")
+      r.get("requestId") shouldBe Some("per-call")
+      r.get("user") shouldBe Some("u1")
+      r.loggerName shouldBe Some("test.capture")
     }
     "not evaluate messages for disabled levels" in {
       records.clear()

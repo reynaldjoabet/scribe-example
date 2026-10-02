@@ -20,7 +20,6 @@ object ScribeLogging {
   def dropped: Long = stdout.dropped
 
   def init(): Unit = if (initialized.compareAndSet(false, true)) {
-    LeanMDCMap.install()
     val level =
       sys.env.get("LOG_LEVEL").flatMap(Level.get).getOrElse(Level.Info)
     val json = !sys.env.get("LOG_FORMAT").contains("text")

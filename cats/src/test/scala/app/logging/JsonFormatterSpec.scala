@@ -148,5 +148,32 @@ class JsonFormatterSpec extends AnyWordSpec with Matchers {
         )
       }
     }
+    "render correctly when a lazy message logs on the same thread (reentrancy)" in {
+      val inner =
+        record(List(LoggableMessage[String](new TextOutput(_))("inner")))
+      val outer = record(
+        List(
+          LoggableMessage[String](new TextOutput(_)) {
+            JsonFormatter.render(
+              inner
+            ) // evaluated while the outer line is being built
+            "outer"
+          }
+        )
+      )
+      val line = JsonFormatter.render(outer)
+      parse(line).hcursor.get[String]("message") shouldBe Right("outer")
+      JsonFormatter.render(
+        outer
+      ) shouldBe line // and the next line on this thread is unaffected
+    }
+    "not leak one line's content into the next (builder reuse)" in {
+      val long = record(List("x" * 5000))
+      JsonFormatter.render(long)
+      val short = record(List("hi"))
+      parse(JsonFormatter.render(short)).hcursor
+        .get[String]("message") shouldBe Right("hi")
+      JsonFormatter.render(short) should not include "xxx"
+    }
   }
 }

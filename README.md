@@ -172,8 +172,6 @@ This is what happens when Hikari logs a warning in your scribe-example app:
 
 `org.slf4j.MDC` is stored on the thread, in Scribe's thread-local MDC. That's fine for libraries that set and read it on one thread. It doesn't follow cats-effect or ZIO fibers, which is why your code uses `LogContext` or `logAnnotate`
 
-The SLF4J provider doesn't copy the MDC into the record, so `JsonFormatter` reads it for every line. Scribe's own MDC copies itself into a new map on every read, even when empty. `ScribeLogging.init` therefore installs `LeanMDCMap`, which behaves the same but costs nothing when empty (the usual case under cats-effect and ZIO).
-
 ```sh
 org.slf4j.LoggerFactory.getLogger(name) ──► provider.getLoggerFactory().getLogger(name)
                                               scribe: ScribeLoggerFactory → ScribeLoggerAdapter

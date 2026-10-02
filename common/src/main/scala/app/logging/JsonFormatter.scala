@@ -21,8 +21,20 @@ object JsonFormatter extends Formatter {
     render(record)
   )
 
+  // One builder per thread, reused for every line: a fresh 512-byte buffer per line was the biggest allocation after
+  // the record itself, and lines with a stack trace outgrew it and copied it again. An oversized builder (one huge
+  // trace) is dropped after use so a thread doesn't hold it forever. Rendering evaluates the message, which is user
+  // code that may itself log on this thread (re-entering render): the builder is taken out of the ThreadLocal while
+  // in use, so a nested call just allocates its own.
+  private val builders = new ThreadLocal[java.lang.StringBuilder]
+  private val MaxRetained = 16384
+
   def render(record: LogRecord): String = {
-    val sb = new java.lang.StringBuilder(512)
+    val cached = builders.get()
+    val sb =
+      if (cached ne null) { builders.set(null); cached }
+      else new java.lang.StringBuilder(1024)
+    sb.setLength(0)
     sb.append("{\"timestamp\":\"")
     JsonLogFields.appendTimestamp(sb, record.timeStamp)
     sb.append('"')
@@ -45,7 +57,9 @@ object JsonFormatter extends Formatter {
     data(sb, record)
     sb.append(",\"trace\":")
     traces(sb, record)
-    sb.append('}').toString
+    val line = sb.append('}').toString
+    if (sb.capacity <= MaxRetained) builders.set(sb)
+    line
   }
 
   // null / single value / array, like Scribe's JSON support

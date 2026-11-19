@@ -1,8 +1,6 @@
 ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / crossScalaVersions := Seq("3.3.8", "3.9.0")
-
 ThisBuild / scalacOptions := Seq(
   "-encoding",
   "UTF-8",
@@ -19,15 +17,15 @@ ThisBuild / scalacOptions := Seq(
   "-Xmax-inlines:64"
 )
 // scribe-slf4j2 is an SLF4J 2 provider; pin the API so no dependency can drag it back to 1.7.x
-ThisBuild / dependencyOverrides += "org.slf4j" % "slf4j-api" % "2.0.17"
+ThisBuild / dependencyOverrides += "org.slf4j" % "slf4j-api" % "2.0.20"
 
-val scribe = "3.19.0"
-val http4s = "0.23.30"
-val zio = "2.1.21"
-val zioHttp = "3.5.1"
-val scalaTest = "3.2.19"
-val circe = "0.14.15"
-val jsoniter = "2.41.2"
+val scribe = "3.19.1"
+val http4s = "0.23.39"
+val zio = "2.1.27"
+val zioHttp = "3.11.6"
+val scalaTest = "3.2.20"
+val circe = "0.14.17"
+val jsoniter = "2.43.0"
 
 lazy val benchClasspath =
   taskKey[File](
@@ -75,7 +73,7 @@ lazy val catsApp = project
       "org.http4s" %% "http4s-ember-server" % http4s,
       "org.http4s" %% "http4s-dsl" % http4s,
       "org.http4s" %% "http4s-circe" % http4s,
-      "org.typelevel" %% "log4cats-slf4j" % "2.7.0",
+      "org.typelevel" %% "log4cats-slf4j" % "2.8.0",
       "org.scalatest" %% "scalatest" % scalaTest % Test,
       // reference implementation for JsonFormatterSpec and HandleBenchmark only
       "com.outr" %% "scribe-json-circe" % scribe % Test
